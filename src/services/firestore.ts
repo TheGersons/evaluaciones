@@ -30,7 +30,7 @@ const ALL_CARGOS: CargoEvaluador[] = [
   "Compañero",
   "Sub-alterno",
   "Cliente",
-  "Partner"
+  "Autoevaluacion"
 ];
 
 // =========================
@@ -193,7 +193,7 @@ export async function createCompetencia(data: {
     activa: true,
     tipo: "likert",
     grupo: null,
-    aplicaA: data.aplicaA ?? ["Jefe inmediato", "Compañero", "Sub-alterno", "Cliente", "Partner"],
+    aplicaA: data.aplicaA ?? ["Jefe inmediato", "Compañero", "Sub-alterno", "Cliente", "Autoevaluacion"],
     escalaMin: 1,
     escalaMax: 5,
     etiquetaMin: "Muy bajo",

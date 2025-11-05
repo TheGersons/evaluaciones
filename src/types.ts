@@ -5,7 +5,7 @@ export type CargoEvaluador =
   | "Compañero"
   | "Sub-alterno"
   | "Cliente"
-  | "Partner";
+  | "Autoevaluacion";
 
 export interface Evaluado {
   id: string;

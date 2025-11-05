@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site":"evaluaciones360-eb048",
     "public": "dist",
     "ignore": [
       "firebase.json",

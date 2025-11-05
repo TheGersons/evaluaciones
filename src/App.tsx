@@ -9,13 +9,9 @@ import type {
   DashboardStats
 } from "./types";
 import {
-  fetchEvaluados,
-  createEvaluado,
-  deleteEvaluado,
   fetchCompetencias,
   createCompetencia,
   toggleCompetenciaActiva,
-  fetchDashboardStats,
   fetchEvaluadores,
   createEvaluador,
   deleteEvaluador,
@@ -23,7 +19,11 @@ import {
   getEvaluador,
   updateEvaluadorEstado
 } from "./services/firestore";
-
+import {
+  apiFetchEvaluados,
+  apiCreateEvaluado,
+  apiDeleteEvaluado
+} from "./services/api";
 // =====================================================
 // Utilidad: decidir qué vista mostrar según la URL
 // =====================================================
@@ -42,6 +42,14 @@ export default App;
 // =====================================================
 
 function Dashboard() {
+  const CARGOS = [
+    "Jefe inmediato",
+    "Compañero",
+    "Sub-alterno",
+    "Cliente",
+    "Autoevaluacion"
+  ];
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [evaluados, setEvaluados] = useState<Evaluado[]>([]);
   const [evaluadores, setEvaluadores] = useState<Evaluador[]>([]);
@@ -69,6 +77,9 @@ function Dashboard() {
     aplicaA: [] as string[]
   });
 
+  const [openCargos, setOpenCargos] = useState(false);
+
+
   const evaluadoresPendientes = evaluadores.filter(
     (e) => e.estado !== "Completada"
   ).length;
@@ -88,18 +99,32 @@ function Dashboard() {
       setLoading(true);
       setError(null);
 
-      const [statsRes, evaluadosRes, evaluadoresRes, competenciasRes] =
-        await Promise.all([
-          fetchDashboardStats(),
-          fetchEvaluados(),
-          fetchEvaluadores(),
-          fetchCompetencias()
-        ]);
+      const [evaluadosRes, evaluadoresRes, competenciasRes] =
+  await Promise.all([
+    apiFetchEvaluados(),
+    fetchEvaluadores(),
+    fetchCompetencias()
+  ]);
 
-      setStats(statsRes);
-      setEvaluados(evaluadosRes);
-      setEvaluadores(evaluadoresRes);
-      setCompetencias(competenciasRes);
+setEvaluados(
+  evaluadosRes.map((e) => ({
+    id: String(e.id),
+    nombre: e.nombre,
+    puesto: e.puesto,
+    area: e.area,
+    fechaRegistro: e.fecha_registro,
+    activo: e.activo
+  }))
+);
+setEvaluadores(evaluadoresRes);
+setCompetencias(competenciasRes);
+
+// stats simples: puedes poner 0 evaluaciones por ahora
+setStats({
+  totalEvaluadores: evaluadoresRes.length,
+  totalEvaluados: evaluadosRes.length,
+  totalEvaluaciones: 0
+});
     } catch (e: any) {
       console.error(e);
       setError(e?.message ?? "Error cargando datos");
@@ -124,11 +149,12 @@ function Dashboard() {
     }
 
     try {
-      await createEvaluado({
-        nombre: nuevoEvaluado.nombre.trim(),
-        puesto: nuevoEvaluado.puesto.trim(),
-        area: nuevoEvaluado.area.trim()
-      });
+      await apiCreateEvaluado({
+  nombre: nuevoEvaluado.nombre.trim(),
+  puesto: nuevoEvaluado.puesto.trim(),
+  area: nuevoEvaluado.area.trim()
+});
+
       setNuevoEvaluado({ nombre: "", puesto: "", area: "" });
       await cargarTodo();
     } catch (e: any) {
@@ -140,7 +166,7 @@ function Dashboard() {
   async function handleEliminarEvaluado(id: string) {
     if (!confirm("¿Eliminar esta persona a evaluar?")) return;
     try {
-      await deleteEvaluado(id);
+      await apiDeleteEvaluado(Number(id));
       await cargarTodo();
     } catch (e: any) {
       console.error(e);
@@ -246,6 +272,26 @@ function Dashboard() {
     }
   }
 
+  function toggleCargoAplica(cargo: string) {
+    setNuevaCompetencia((prev) => {
+      const seleccionados = prev.aplicaA || [];
+      if (seleccionados.includes(cargo)) {
+        // quitar
+        return {
+          ...prev,
+          aplicaA: seleccionados.filter((c) => c !== cargo)
+        };
+      } else {
+        // agregar
+        return {
+          ...prev,
+          aplicaA: [...seleccionados, cargo]
+        };
+      }
+    });
+  }
+
+
   // ==========================
   // Render Dashboard
   // ==========================
@@ -343,7 +389,7 @@ function Dashboard() {
               <option>Compañero</option>
               <option>Sub-alterno</option>
               <option>Cliente</option>
-              <option>Partner</option>
+              <option>Autoevaluacion</option>
             </select>
             <button type="submit">➕ Agregar evaluador</button>
           </form>
@@ -506,24 +552,44 @@ function Dashboard() {
                 })
               }
             />
-            <select
-              multiple
-              className="select-cargo"
-              value={nuevaCompetencia.aplicaA || []}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions).map(
-                  (opt) => opt.value
-                );
-                setNuevaCompetencia({ ...nuevaCompetencia, aplicaA: selected });
-              }}
-            >
-              <option value="Jefe inmediato">Jefe inmediato</option>
-              <option value="Compañero">Compañero</option>
-              <option value="Sub-alterno">Sub-alterno</option>
-              <option value="Cliente">Cliente</option>
-              <option value="Partner">Partner</option>
-            </select>
+            <div className="multi-select">
+              <div
+                className="multi-select-trigger"
+                onClick={() => setOpenCargos((o) => !o)}
+              >
+                <span>
+                  {nuevaCompetencia.aplicaA.length === 0
+                    ? "Aplica a: todos los cargos"
+                    : `Aplica a: ${nuevaCompetencia.aplicaA.join(", ")}`}
+                </span>
+                <span className="multi-select-arrow">▾</span>
+              </div>
 
+              {openCargos && (
+                <div className="multi-select-dropdown">
+                  {CARGOS.map((cargo) => (
+                    <label key={cargo} className="multi-select-option">
+                      <input
+                        type="checkbox"
+                        checked={nuevaCompetencia.aplicaA.includes(cargo)}
+                        onChange={() => toggleCargoAplica(cargo)}
+                      />
+                      <span>{cargo}</span>
+                    </label>
+                  ))}
+
+                  <button
+                    type="button"
+                    className="multi-select-clear"
+                    onClick={() =>
+                      setNuevaCompetencia((prev) => ({ ...prev, aplicaA: [] }))
+                    }
+                  >
+                    Todos los cargos
+                  </button>
+                </div>
+              )}
+            </div>
             <button type="submit">➕ Agregar pregunta</button>
           </form>
 
@@ -581,7 +647,7 @@ function EvaluarPage() {
   const evaluadorId = search.get("evaluadorId") || "";
 
   const [evaluador, setEvaluador] = useState<Evaluador | null>(null);
-  const [evaluados, setEvaluados] = useState<Evaluado[]>([]);
+  const [evaluados, /*setEvaluados*/] = useState<Evaluado[]>([]);
   const [competencias, setCompetencias] = useState<Competencia[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -603,9 +669,9 @@ function EvaluarPage() {
           return;
         }
 
-        const [ev, listaEvaluados, listaCompetencias] = await Promise.all([
+        const [ev, /*listaEvaluados*/, listaCompetencias] = await Promise.all([
           getEvaluador(evaluadorId),
-          fetchEvaluados(),
+          apiFetchEvaluados(),
           fetchCompetencias()
         ]);
 
@@ -631,7 +697,7 @@ function EvaluarPage() {
         });
 
         setEvaluador(ev);
-        setEvaluados(listaEvaluados);
+        //setEvaluados(listaEvaluados);
         setCompetencias(compsFiltradas);
       } catch (e: any) {
         console.error(e);
