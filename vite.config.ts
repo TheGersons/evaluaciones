@@ -1,8 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
 export default defineConfig({
-  base: "/eval360/",
   plugins: [react()],
+  base: '/eval360/',
+  server: {
+    port: 5173,
+    proxy: {
+      '/eval360/api': {
+        target: 'http://192.168.3.87',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/eval360\/api/, '/eval360/api')
+      }
+    }
+  }
 })

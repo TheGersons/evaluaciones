@@ -8,22 +8,27 @@ import type {
   Competencia,
   DashboardStats
 } from "./types";
+
+// ✅ SERVICIOS POSTGREST (ya migrados)
+import {
+  apiFetchEvaluados,
+  apiCreateEvaluado,
+  apiDeleteEvaluado,
+  apiFetchEvaluadores,
+  apiCreateEvaluador,
+  apiDeleteEvaluador,
+  apiGetEvaluador,
+  apiUpdateEvaluadorEstado
+} from "./services/api";
+
+// ⚠️ SERVICIOS FIREBASE (todavía en uso - migrar en Fase 3 y 4)
 import {
   fetchCompetencias,
   createCompetencia,
   toggleCompetenciaActiva,
-  fetchEvaluadores,
-  createEvaluador,
-  deleteEvaluador,
-  createEvaluacion,
-  getEvaluador,
-  updateEvaluadorEstado
+  createEvaluacion
 } from "./services/firestore";
-import {
-  apiFetchEvaluados,
-  apiCreateEvaluado,
-  apiDeleteEvaluado
-} from "./services/api";
+
 // =====================================================
 // Utilidad: decidir qué vista mostrar según la URL
 // =====================================================
@@ -79,7 +84,6 @@ function Dashboard() {
 
   const [openCargos, setOpenCargos] = useState(false);
 
-
   const evaluadoresPendientes = evaluadores.filter(
     (e) => e.estado !== "Completada"
   ).length;
@@ -93,38 +97,51 @@ function Dashboard() {
       )
       : 0;
 
-
+  // ✅ MIGRADO A POSTGREST
   async function cargarTodo() {
     try {
       setLoading(true);
       setError(null);
 
-      const [evaluadosRes, evaluadoresRes, competenciasRes] =
-  await Promise.all([
-    apiFetchEvaluados(),
-    fetchEvaluadores(),
-    fetchCompetencias()
-  ]);
+      const [evaluadosRes, evaluadoresRes, competenciasRes] = await Promise.all([
+        apiFetchEvaluados(),
+        apiFetchEvaluadores(), // ✅ Ahora usa PostgREST
+        fetchCompetencias()    // ⚠️ Todavía Firebase (migrar en Fase 3)
+      ]);
 
-setEvaluados(
-  evaluadosRes.map((e) => ({
-    id: String(e.id),
-    nombre: e.nombre,
-    puesto: e.puesto,
-    area: e.area,
-    fechaRegistro: e.fecha_registro,
-    activo: e.activo
-  }))
-);
-setEvaluadores(evaluadoresRes);
-setCompetencias(competenciasRes);
+      // Mapear evaluados desde PostgreSQL
+      setEvaluados(
+        evaluadosRes.map((e) => ({
+          id: String(e.id),
+          nombre: e.nombre,
+          puesto: e.puesto,
+          area: e.area,
+          fechaRegistro: e.fecha_registro,
+          activo: e.activo
+        }))
+      );
 
-// stats simples: puedes poner 0 evaluaciones por ahora
-setStats({
-  totalEvaluadores: evaluadoresRes.length,
-  totalEvaluados: evaluadosRes.length,
-  totalEvaluaciones: 0
-});
+      // Mapear evaluadores desde PostgreSQL
+      setEvaluadores(
+        evaluadoresRes.map((e) => ({
+          id: String(e.id),
+          nombre: e.nombre,
+          email: e.email,
+          cargo: e.cargo,
+          evaluadoId: String(e.evaluado_id),
+          fechaRegistro: e.fecha_registro,
+          estado: e.estado
+        }))
+      );
+
+      setCompetencias(competenciasRes);
+
+      // Stats calculadas desde los datos
+      setStats({
+        totalEvaluadores: evaluadoresRes.length,
+        totalEvaluados: evaluadosRes.length,
+        totalEvaluaciones: 0 // TODO: Fase 5 - contar desde evaluaciones
+      });
     } catch (e: any) {
       console.error(e);
       setError(e?.message ?? "Error cargando datos");
@@ -138,7 +155,7 @@ setStats({
   }, []);
 
   // ==========================
-  // Handlers Evaluados
+  // Handlers Evaluados (✅ Ya migrados)
   // ==========================
 
   async function handleAgregarEvaluado(e: React.FormEvent) {
@@ -150,10 +167,10 @@ setStats({
 
     try {
       await apiCreateEvaluado({
-  nombre: nuevoEvaluado.nombre.trim(),
-  puesto: nuevoEvaluado.puesto.trim(),
-  area: nuevoEvaluado.area.trim()
-});
+        nombre: nuevoEvaluado.nombre.trim(),
+        puesto: nuevoEvaluado.puesto.trim(),
+        area: nuevoEvaluado.area.trim()
+      });
 
       setNuevoEvaluado({ nombre: "", puesto: "", area: "" });
       await cargarTodo();
@@ -175,7 +192,7 @@ setStats({
   }
 
   // ==========================
-  // Handlers Evaluadores
+  // Handlers Evaluadores (✅ MIGRADOS A POSTGREST)
   // ==========================
 
   async function handleAgregarEvaluador(e: React.FormEvent) {
@@ -193,14 +210,14 @@ setStats({
       return;
     }
 
-
     try {
-      await createEvaluador({
+      await apiCreateEvaluador({
         nombre: nuevoEvaluador.nombre.trim(),
         email: nuevoEvaluador.email.trim(),
         cargo: nuevoEvaluador.cargo,
-        evaluadoId: nuevoEvaluador.evaluadoId
+        evaluado_id: Number(nuevoEvaluador.evaluadoId)
       });
+
       setNuevoEvaluador({ nombre: "", email: "", cargo: "", evaluadoId: "" });
       await cargarTodo();
     } catch (e: any) {
@@ -212,7 +229,7 @@ setStats({
   async function handleEliminarEvaluador(id: string) {
     if (!confirm("¿Eliminar este evaluador?")) return;
     try {
-      await deleteEvaluador(id);
+      await apiDeleteEvaluador(Number(id));
       await cargarTodo();
     } catch (e: any) {
       console.error(e);
@@ -222,7 +239,9 @@ setStats({
 
   function handleCopiarLinkEvaluacion(evaluador: Evaluador) {
     const base = window.location.origin;
-    const url = `${base}/evaluar?evaluadorId=${encodeURIComponent(evaluador.id)}`;
+    // Usar la ruta base correcta
+    const basePath = import.meta.env.BASE_URL || '/';
+    const url = `${base}${basePath}evaluar?evaluadorId=${encodeURIComponent(evaluador.id)}`;
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard
@@ -237,7 +256,7 @@ setStats({
   }
 
   // ==========================
-  // Handlers Competencias
+  // Handlers Competencias (⚠️ Todavía Firebase - migrar Fase 3)
   // ==========================
 
   async function handleAgregarCompetencia(e: React.FormEvent) {
@@ -276,13 +295,11 @@ setStats({
     setNuevaCompetencia((prev) => {
       const seleccionados = prev.aplicaA || [];
       if (seleccionados.includes(cargo)) {
-        // quitar
         return {
           ...prev,
           aplicaA: seleccionados.filter((c) => c !== cargo)
         };
       } else {
-        // agregar
         return {
           ...prev,
           aplicaA: [...seleccionados, cargo]
@@ -290,7 +307,6 @@ setStats({
       }
     });
   }
-
 
   // ==========================
   // Render Dashboard
@@ -345,7 +361,6 @@ setStats({
           </section>
         )}
 
-
         {/* Evaluadores */}
         <section className="panel">
           <h2>🧑‍💼 Evaluadores</h2>
@@ -384,6 +399,14 @@ setStats({
                   {ev.nombre} — {ev.puesto} ({ev.area})
                 </option>
               ))}
+            </select>
+            <select
+              className="select-cargo"
+              value={nuevoEvaluador.cargo}
+              onChange={(e) =>
+                setNuevoEvaluador({ ...nuevoEvaluador, cargo: e.target.value })
+              }
+            >
               <option value="">Cargo respecto al evaluado</option>
               <option>Jefe inmediato</option>
               <option>Compañero</option>
@@ -399,6 +422,7 @@ setStats({
               <tr>
                 <th>Nombre</th>
                 <th>Correo</th>
+                <th>Evalúa a</th>
                 <th>Cargo</th>
                 <th>Estado</th>
                 <th>Enlace</th>
@@ -408,36 +432,44 @@ setStats({
             <tbody>
               {evaluadores.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center" }}>
+                  <td colSpan={7} style={{ textAlign: "center" }}>
                     No hay evaluadores registrados
                   </td>
                 </tr>
               ) : (
-                evaluadores.map((ev) => (
-                  <tr key={ev.id}>
-                    <td>{ev.nombre}</td>
-                    <td>{ev.email}</td>
-                    <td>{ev.cargo}</td>
-                    <td>{ev.estado}</td>
-                    <td>
-                      <button
-                        type="button"
-                        onClick={() => handleCopiarLinkEvaluacion(ev)}
-                      >
-                        Copiar enlace
-                      </button>
-                    </td>
-                    <td>
-                      <button
-                        className="btn-danger"
-                        type="button"
-                        onClick={() => handleEliminarEvaluador(ev.id)}
-                      >
-                        Eliminar
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                evaluadores.map((ev) => {
+                  const evaluado = evaluados.find(e => e.id === ev.evaluadoId);
+                  return (
+                    <tr key={ev.id}>
+                      <td>{ev.nombre}</td>
+                      <td>{ev.email}</td>
+                      <td>{evaluado?.nombre || "—"}</td>
+                      <td>{ev.cargo}</td>
+                      <td>
+                        <span className={`badge ${ev.estado === 'Completada' ? 'badge-success' : 'badge-warning'}`}>
+                          {ev.estado}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => handleCopiarLinkEvaluacion(ev)}
+                        >
+                          Copiar enlace
+                        </button>
+                      </td>
+                      <td>
+                        <button
+                          className="btn-danger"
+                          type="button"
+                          onClick={() => handleEliminarEvaluador(ev.id)}
+                        >
+                          Eliminar
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -521,7 +553,7 @@ setStats({
           <h2>📋 Preguntas / Competencias</h2>
           <p className="sub">
             Estas competencias se usarán para construir el formulario de evaluación.
-            Más adelante podrás limitar por cargo; por ahora se aplican a todos.
+            Puedes limitar por cargo usando el selector.
           </p>
 
           <form className="form-row" onSubmit={handleAgregarCompetencia}>
@@ -599,7 +631,7 @@ setStats({
                 <th>Orden</th>
                 <th>Clave</th>
                 <th>Título</th>
-                <th>Aplica</th>
+                <th>Aplica a</th>
                 <th>Activa</th>
                 <th>Acciones</th>
               </tr>
@@ -607,7 +639,7 @@ setStats({
             <tbody>
               {competencias.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center" }}>
+                  <td colSpan={6} style={{ textAlign: "center" }}>
                     No hay competencias registradas
                   </td>
                 </tr>
@@ -617,7 +649,11 @@ setStats({
                     <td>{c.orden}</td>
                     <td>{c.clave}</td>
                     <td>{c.titulo}</td>
-                    <td>{(c.aplicaA || []).join(", ")}</td>
+                    <td>
+                      {!c.aplicaA || c.aplicaA.length === 0
+                        ? "Todos"
+                        : c.aplicaA.join(", ")}
+                    </td>
                     <td>{c.activa ? "Sí" : "No"}</td>
                     <td>
                       <button
@@ -647,12 +683,11 @@ function EvaluarPage() {
   const evaluadorId = search.get("evaluadorId") || "";
 
   const [evaluador, setEvaluador] = useState<Evaluador | null>(null);
-  const [evaluados, /*setEvaluados*/] = useState<Evaluado[]>([]);
+  const [evaluado, setEvaluado] = useState<Evaluado | null>(null);
   const [competencias, setCompetencias] = useState<Competencia[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [evaluadoSeleccionado, setEvaluadoSeleccionado] = useState<string>("");
   const [respuestas, setRespuestas] = useState<Record<string, number>>({});
   const [comentarios, setComentarios] = useState("");
   const [enviado, setEnviado] = useState(false);
@@ -669,11 +704,8 @@ function EvaluarPage() {
           return;
         }
 
-        const [ev, /*listaEvaluados*/, listaCompetencias] = await Promise.all([
-          getEvaluador(evaluadorId),
-          apiFetchEvaluados(),
-          fetchCompetencias()
-        ]);
+        // ✅ Obtener evaluador desde PostgreSQL
+        const ev = await apiGetEvaluador(Number(evaluadorId));
 
         if (!ev) {
           setError("No se encontró el evaluador.");
@@ -687,8 +719,20 @@ function EvaluarPage() {
           return;
         }
 
+        // ✅ Obtener el evaluado asignado
+        const evaluadosRes = await apiFetchEvaluados();
+        const evaluadoAsignado = evaluadosRes.find(e => e.id === ev.evaluado_id);
 
-        // Filtramos competencias por cargo y activas
+        if (!evaluadoAsignado) {
+          setError("No se encontró la persona a evaluar.");
+          setLoading(false);
+          return;
+        }
+
+        // ⚠️ Competencias todavía desde Firebase
+        const listaCompetencias = await fetchCompetencias();
+
+        // Filtrar competencias por cargo y activas
         const cargo = ev.cargo;
         const compsFiltradas = listaCompetencias.filter((c) => {
           if (!c.activa) return false;
@@ -696,8 +740,25 @@ function EvaluarPage() {
           return c.aplicaA.includes(cargo as any);
         });
 
-        setEvaluador(ev);
-        //setEvaluados(listaEvaluados);
+        setEvaluador({
+          id: String(ev.id),
+          nombre: ev.nombre,
+          email: ev.email,
+          cargo: ev.cargo,
+          evaluadoId: String(ev.evaluado_id),
+          fechaRegistro: ev.fecha_registro,
+          estado: ev.estado
+        });
+
+        setEvaluado({
+          id: String(evaluadoAsignado.id),
+          nombre: evaluadoAsignado.nombre,
+          puesto: evaluadoAsignado.puesto,
+          area: evaluadoAsignado.area,
+          fechaRegistro: evaluadoAsignado.fecha_registro,
+          activo: evaluadoAsignado.activo
+        });
+
         setCompetencias(compsFiltradas);
       } catch (e: any) {
         console.error(e);
@@ -716,8 +777,8 @@ function EvaluarPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!evaluador || !evaluadoSeleccionado) {
-      alert("Selecciona a la persona que estás evaluando.");
+    if (!evaluador || !evaluado) {
+      alert("Error: no se pudo cargar la información.");
       return;
     }
 
@@ -729,15 +790,17 @@ function EvaluarPage() {
     }
 
     try {
+      // ⚠️ Todavía usa Firebase - migrar en Fase 5
       await createEvaluacion({
         evaluadorId: evaluador.id,
-        evaluadoId: evaluadoSeleccionado,
+        evaluadoId: evaluado.id,
         cargoEvaluador: evaluador.cargo,
         respuestas,
         comentarios: comentarios.trim()
       });
 
-      await updateEvaluadorEstado(evaluador.id, "Completada");
+      // ✅ Actualizar estado en PostgreSQL
+      await apiUpdateEvaluadorEstado(Number(evaluador.id), "Completada");
       setEnviado(true);
     } catch (e: any) {
       console.error(e);
@@ -788,8 +851,7 @@ function EvaluarPage() {
           <div className="panel">
             <h2>✅ ¡Gracias por completar la evaluación!</h2>
             <p>
-              Tu evaluación para la persona seleccionada ha sido registrada
-              correctamente.
+              Tu evaluación ha sido registrada correctamente.
             </p>
           </div>
         </div>
@@ -809,23 +871,16 @@ function EvaluarPage() {
 
         <section className="panel">
           <h2>👤 Persona a evaluar</h2>
-          <p className="sub">
-            Selecciona a la persona sobre la cual estás realizando esta
-            evaluación.
-          </p>
-
-          <select
-            className="select-evaluado"
-            value={evaluadoSeleccionado}
-            onChange={(e) => setEvaluadoSeleccionado(e.target.value)}
-          >
-            <option value="">Selecciona a la persona</option>
-            {evaluados.map((ev) => (
-              <option key={ev.id} value={ev.id}>
-                {ev.nombre} — {ev.puesto} ({ev.area})
-              </option>
-            ))}
-          </select>
+          <div style={{ 
+            background: '#f3f4f6', 
+            padding: '16px', 
+            borderRadius: '10px',
+            border: '2px solid #4f46e5'
+          }}>
+            <p><strong>Nombre:</strong> {evaluado?.nombre}</p>
+            <p><strong>Puesto:</strong> {evaluado?.puesto}</p>
+            <p><strong>Área:</strong> {evaluado?.area}</p>
+          </div>
         </section>
 
         <section className="panel">

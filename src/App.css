@@ -411,6 +411,25 @@ body {
   transform: translateY(0);
 }
 
+/* Badges de estado */
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 /* Responsivo */
 @media (max-width: 900px) {
   .root {

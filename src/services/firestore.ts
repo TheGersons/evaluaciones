@@ -133,7 +133,8 @@ export async function getEvaluador(id: string): Promise<Evaluador | null> {
     cargo: data.cargo ?? "",
     token: data.token,
     fechaRegistro: data.fechaRegistro,
-    estado: data.estado ?? "Pendiente"
+    estado: data.estado ?? "Pendiente",
+    evaluadoId : data.evaluadoId ?? ""
   };
 }
 
