@@ -96,8 +96,10 @@ export interface EvaluacionDTO {
 export interface RespuestaDTO {
   evaluacion_id: number;
   competencia_id: number;
-  valor: number;
+  valor: number;      // para tipo 'likert'; en abiertas puedes usar 0 o ignorarlo
+  comentario: string; // texto libre, '' cuando no aplica
 }
+
 
 export interface ConfiguracionDTO {
   clave: string;
@@ -329,12 +331,13 @@ export async function apiCreateEvaluacionCabecera(data: {
       evaluador_id: data.evaluador_id,
       evaluado_id: data.evaluado_id,
       cargo_evaluador: data.cargo_evaluador,
-      comentarios: data.comentarios || null
+      comentarios: data.comentarios ?? ''  // nunca null
     }),
   });
 
   return Array.isArray(result) ? result[0] : result;
 }
+
 
 // =====================================================
 // RESPUESTAS (detalle de evaluaciones)
@@ -350,12 +353,13 @@ export async function apiFetchRespuestas(
 
 export async function apiInsertRespuestas(
   evaluacionId: number,
-  respuestas: Array<{ competencia_id: number; valor: number }>
+  respuestas: Array<{ competencia_id: number; valor: number; comentario?: string }>
 ): Promise<void> {
   const filas = respuestas.map(r => ({
     evaluacion_id: evaluacionId,
     competencia_id: r.competencia_id,
-    valor: r.valor
+    valor: r.valor,
+    comentario: r.comentario ?? ''  // likert: '', abiertas: texto
   }));
 
   await apiFetch('/respuestas', {
@@ -363,6 +367,7 @@ export async function apiInsertRespuestas(
     body: JSON.stringify(filas),
   });
 }
+
 
 // =====================================================
 // CONFIGURACIÓN
@@ -397,23 +402,21 @@ export async function apiCrearEvaluacionCompleta(data: {
   evaluador_id: number;
   evaluado_id: number;
   cargo_evaluador: string;
-  respuestas: Array<{ competencia_id: number; valor: number }>;
-  comentarios?: string;
+  respuestas: Array<{ competencia_id: number; valor: number; comentario?: string }>;
+  comentarios?: string; // comentario global de la evaluación
 }): Promise<void> {
-  // 1. Crear cabecera
   const evaluacion = await apiCreateEvaluacionCabecera({
     evaluador_id: data.evaluador_id,
     evaluado_id: data.evaluado_id,
     cargo_evaluador: data.cargo_evaluador,
-    comentarios: data.comentarios
+    comentarios: data.comentarios 
   });
 
-  // 2. Insertar respuestas
   await apiInsertRespuestas(evaluacion.id, data.respuestas);
 
-  // 3. Marcar evaluador como completado
   await apiUpdateEvaluadorEstado(data.evaluador_id, 'Completada');
 }
+
 
 // =====================================================
 // FUNCIONES AUXILIARES PARA COMBINAR COMPETENCIAS + CARGOS

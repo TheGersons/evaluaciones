@@ -83,6 +83,225 @@ export default App;
 // DASHBOARD (admin)
 // =====================================================
 
+type SortDirection = "asc" | "desc";
+
+interface DataTableColumn<T> {
+  header: string;
+  render: (row: T) => React.ReactNode;
+  getSortValue?: (row: T) => string | number;
+}
+
+interface DataTableProps<T> {
+  rows: T[];
+  columns: DataTableColumn<T>[];
+  searchPlaceholder?: string;
+  getSearchText?: (row: T) => string;
+  initialPageSize?: number;
+}
+
+function DataTable<T>({
+  rows,
+  columns,
+  searchPlaceholder = "Buscar...",
+  getSearchText,
+  initialPageSize = 10
+}: DataTableProps<T>) {
+  const [search, setSearch] = useState("");
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [page, setPage] = useState(1);
+  const [sortIndex, setSortIndex] = useState<number | null>(null);
+  const [sortDir, setSortDir] = useState<SortDirection>("asc");
+
+  // Filtro por texto
+  const filtered = rows.filter((row) => {
+    if (!search.trim() || !getSearchText) return true;
+    const haystack = getSearchText(row).toLowerCase();
+    return haystack.includes(search.toLowerCase());
+  });
+
+  // Orden
+  let sorted = filtered;
+  if (sortIndex !== null) {
+    const col = columns[sortIndex];
+    if (col.getSortValue) {
+      sorted = [...filtered].sort((a, b) => {
+        const va = col.getSortValue!(a);
+        const vb = col.getSortValue!(b);
+        if (va < vb) return sortDir === "asc" ? -1 : 1;
+        if (va > vb) return sortDir === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+  }
+
+  // Paginación
+  const total = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const end = start + pageSize;
+  const pageRows = sorted.slice(start, end);
+
+  function handleHeaderClick(index: number) {
+    const col = columns[index];
+    if (!col.getSortValue) return;
+    if (sortIndex === index) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortIndex(index);
+      setSortDir("asc");
+    }
+  }
+
+  function handlePageChange(next: number) {
+    if (next < 1 || next > totalPages) return;
+    setPage(next);
+  }
+
+  function handlePageSizeChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const size = parseInt(e.target.value, 10);
+    setPageSize(size);
+    setPage(1);
+  }
+
+  return (
+    <div style={{ marginTop: "12px" }}>
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "8px",
+        gap: "8px",
+        flexWrap: "wrap"
+      }}>
+        <input
+          type="text"
+          placeholder={searchPlaceholder}
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          style={{
+            flex: "1",
+            minWidth: "200px",
+            padding: "6px 10px",
+            borderRadius: "8px",
+            border: "1px solid #d1d5db",
+            fontSize: "14px",
+            background: "#ffffff",   // fondo blanco
+            color: "#111827"         // texto negro
+          }}
+        />
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "13px", color: "#6b7280" }}>Filas por página</span>
+          <select
+            value={pageSize}
+            onChange={handlePageSizeChange}
+            style={{
+              padding: "4px 8px",
+              borderRadius: "8px",
+              border: "1px solid #d1d5db",
+              fontSize: "13px"
+            }}
+          >
+            <option value={5}>5</option>
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+          </select>
+        </div>
+      </div>
+
+      <table className="table">
+        <thead>
+          <tr>
+            {columns.map((col, idx) => (
+              <th
+                key={idx}
+                onClick={() => handleHeaderClick(idx)}
+                style={col.getSortValue ? { cursor: "pointer" } : {}}
+              >
+                {col.header}
+                {sortIndex === idx && (
+                  <span style={{ marginLeft: "4px", fontSize: "10px" }}>
+                    {sortDir === "asc" ? "▲" : "▼"}
+                  </span>
+                )}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {pageRows.length === 0 ? (
+            <tr>
+              <td colSpan={columns.length} style={{ textAlign: "center" }}>
+                Sin registros
+              </td>
+            </tr>
+          ) : (
+            pageRows.map((row, idx) => (
+              <tr key={idx}>
+                {columns.map((col, cIdx) => (
+                  <td key={cIdx}>{col.render(row)}</td>
+                ))}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginTop: "8px",
+        fontSize: "13px",
+        color: "#6b7280",
+        flexWrap: "wrap",
+        gap: "8px"
+      }}>
+        <div>
+          Mostrando {total === 0 ? 0 : start + 1}–{Math.min(end, total)} de {total}
+        </div>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          <button
+            type="button"
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            style={{
+              padding: "4px 8px",
+              borderRadius: "6px",
+              border: "none",
+              background: currentPage === 1 ? "#e5e7eb" : "#4b5563",
+              color: currentPage === 1 ? "#9ca3af" : "#ffffff",
+              cursor: currentPage === 1 ? "not-allowed" : "pointer",
+              fontSize: "13px"
+            }}
+          >
+            « Anterior
+          </button>
+          <span>Página {currentPage} de {totalPages}</span>
+          <button
+            type="button"
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            style={{
+              padding: "4px 8px",
+              borderRadius: "6px",
+              border: "none",
+              background: currentPage === totalPages ? "#e5e7eb" : "#4b5563",
+              color: currentPage === totalPages ? "#9ca3af" : "#ffffff",
+              cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+              fontSize: "13px"
+            }}
+          >
+            Siguiente »
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function Dashboard() {
   const CARGOS = [
     "Jefe inmediato",
@@ -116,7 +335,8 @@ function Dashboard() {
     clave: "",
     titulo: "",
     descripcion: "",
-    aplicaA: [] as string[]
+    aplicaA: [] as string[],
+    tipo: "likert"
   });
 
   const [openCargos, setOpenCargos] = useState(false);
@@ -133,6 +353,9 @@ function Dashboard() {
         (stats.totalEvaluaciones / stats.totalEvaluadores) * 100
       )
       : 0;
+  const [mostrarModalLink, setMostrarModalLink] = useState(false);
+  const [linkCopiar, setLinkCopiar] = useState("");
+
 
   // ✅ MIGRADO A POSTGREST
   async function cargarTodo() {
@@ -180,9 +403,11 @@ function Dashboard() {
           descripcion: c.descripcion || "",
           orden: c.orden,
           activa: c.activa,
-          aplicaA: c.aplicaA || []
+          aplicaA: c.aplicaA || [],
+          tipo: c.tipo || "likert"
         }))
       );
+
 
 
       // Stats calculadas desde los datos
@@ -328,22 +553,11 @@ function Dashboard() {
   }
 
   function handleCopiarLinkEvaluacion(evaluador: Evaluador) {
-    const base = window.location.origin;
-    // Usar la ruta base correcta
-    const basePath = import.meta.env.BASE_URL || '/';
-    const url = `${base}${basePath}evaluar?evaluadorId=${encodeURIComponent(evaluador.id)}`;
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard
-        .writeText(url)
-        .then(() => alert("Link copiado al portapapeles"))
-        .catch(() => {
-          alert("No se pudo copiar automáticamente. Usa copiar/pegar:\n" + url);
-        });
-    } else {
-      alert("Copia este link:\n" + url);
-    }
+    const url = `${window.location.origin}${import.meta.env.BASE_URL}evaluar?evaluadorId=${evaluador.id}`;
+    setLinkCopiar(url);
+    setMostrarModalLink(true);
   }
+
 
   // ==========================
   // Handlers Competencias (⚠️ Todavía Firebase - migrar Fase 3)
@@ -362,13 +576,14 @@ function Dashboard() {
         clave: nuevaCompetencia.clave.trim(),
         titulo: nuevaCompetencia.titulo.trim(),
         descripcion: nuevaCompetencia.descripcion.trim(),
-        orden: competencias.length // Asignar el siguiente orden disponible
+        orden: competencias.length, // Asignar el siguiente orden disponible
+        tipo: nuevaCompetencia.tipo
       });
 
       // 2. Asignar los cargos seleccionados
       await apiSetAplicaCargos(competenciaCreada.id, nuevaCompetencia.aplicaA);
 
-      setNuevaCompetencia({ clave: "", titulo: "", descripcion: "", aplicaA: [] });
+      setNuevaCompetencia({ clave: "", titulo: "", descripcion: "", aplicaA: [], tipo: "likert" });
       setOpenCargos(false);
       await cargarTodo();
     } catch (e: any) {
@@ -424,6 +639,101 @@ function Dashboard() {
   // ==========================
   // Render Dashboard
   // ==========================
+
+  {
+    mostrarModalLink && (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.4)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000
+        }}
+        onClick={() => setMostrarModalLink(false)}
+      >
+        <div
+          style={{
+            background: "white",
+            padding: "24px",
+            borderRadius: "12px",
+            boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
+            width: "90%",
+            maxWidth: "480px",
+            textAlign: "center"
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 style={{ marginBottom: "12px", color: "#111827" }}>Enlace de evaluación</h3>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              justifyContent: "center",
+              marginBottom: "16px",
+              flexWrap: "wrap"
+            }}
+          >
+            <input
+              type="text"
+              readOnly
+              value={linkCopiar}
+              style={{
+                flex: 1,
+                minWidth: "240px",
+                padding: "8px 10px",
+                border: "1px solid #d1d5db",
+                borderRadius: "8px",
+                fontSize: "14px",
+                color: "#111827"
+              }}
+              onFocus={(e) => e.target.select()}
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(linkCopiar);
+                  alert("Enlace copiado al portapapeles");
+                } catch {
+                  alert("Copia no soportada, seleccione el texto y cópielo manualmente.");
+                }
+              }}
+              style={{
+                background: "#4f46e5",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                padding: "8px 12px",
+                cursor: "pointer",
+                fontWeight: 600
+              }}
+            >
+              Copiar
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMostrarModalLink(false)}
+            style={{
+              padding: "6px 12px",
+              background: "#6b7280",
+              color: "white",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer"
+            }}
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    )
+  }
+
 
   return (
     <div className="root">
@@ -573,62 +883,76 @@ function Dashboard() {
             <button type="submit">➕ Agregar evaluador</button>
           </form>
 
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Correo</th>
-                <th>Evalúa a</th>
-                <th>Cargo</th>
-                <th>Estado</th>
-                <th>Enlace</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {evaluadores.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={{ textAlign: "center" }}>
-                    No hay evaluadores registrados
-                  </td>
-                </tr>
-              ) : (
-                evaluadores.map((ev) => {
+          <DataTable
+            rows={evaluadores}
+            columns={[
+              {
+                header: "Nombre",
+                render: (ev) => ev.nombre,
+                getSortValue: (ev) => ev.nombre.toLowerCase()
+              },
+              {
+                header: "Correo",
+                render: (ev) => ev.email,
+                getSortValue: (ev) => ev.email.toLowerCase()
+              },
+              {
+                header: "Evalúa a",
+                render: (ev) => {
                   const evaluado = evaluados.find(e => e.id === ev.evaluadoId);
-                  return (
-                    <tr key={ev.id}>
-                      <td>{ev.nombre}</td>
-                      <td>{ev.email}</td>
-                      <td>{evaluado?.nombre || "—"}</td>
-                      <td>{ev.cargo}</td>
-                      <td>
-                        <span className={`badge ${ev.estado === 'Completada' ? 'badge-success' : 'badge-warning'}`}>
-                          {ev.estado}
-                        </span>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          onClick={() => handleCopiarLinkEvaluacion(ev)}
-                        >
-                          Copiar enlace
-                        </button>
-                      </td>
-                      <td>
-                        <button
-                          className="btn-danger"
-                          type="button"
-                          onClick={() => handleEliminarEvaluador(ev.id)}
-                        >
-                          Eliminar
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                  return evaluado?.nombre || "—";
+                },
+                getSortValue: (ev) => {
+                  const evaluado = evaluados.find(e => e.id === ev.evaluadoId);
+                  return (evaluado?.nombre || "").toLowerCase();
+                }
+              },
+              {
+                header: "Cargo",
+                render: (ev) => ev.cargo,
+                getSortValue: (ev) => ev.cargo.toLowerCase()
+              },
+              {
+                header: "Estado",
+                render: (ev) => (
+                  <span className={`badge ${ev.estado === 'Completada' ? 'badge-success' : 'badge-warning'}`}>
+                    {ev.estado}
+                  </span>
+                ),
+                getSortValue: (ev) => ev.estado.toLowerCase()
+              },
+              {
+                header: "Enlace",
+                render: (ev) => (
+                  <button
+                    type="button"
+                    onClick={() => handleCopiarLinkEvaluacion(ev)}
+                  >
+                    Copiar enlace
+                  </button>
+                )
+              },
+              {
+                header: "Acciones",
+                render: (ev) => (
+                  <button
+                    className="btn-danger"
+                    type="button"
+                    onClick={() => handleEliminarEvaluador(ev.id)}
+                  >
+                    Eliminar
+                  </button>
+                )
+              }
+            ]}
+            searchPlaceholder="Buscar evaluadores..."
+            getSearchText={(ev) => {
+              const evaluado = evaluados.find(e => e.id === ev.evaluadoId);
+              return `${ev.nombre} ${ev.email} ${ev.cargo} ${evaluado?.nombre || ""}`;
+            }}
+            initialPageSize={10}
+          />
+
         </section>
 
         {/* Evaluados */}
@@ -666,42 +990,42 @@ function Dashboard() {
             <button type="submit">➕ Agregar</button>
           </form>
 
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Puesto</th>
-                <th>Área</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {evaluados.length === 0 ? (
-                <tr>
-                  <td colSpan={4} style={{ textAlign: "center" }}>
-                    No hay personas registradas
-                  </td>
-                </tr>
-              ) : (
-                evaluados.map((e) => (
-                  <tr key={e.id}>
-                    <td>{e.nombre}</td>
-                    <td>{e.puesto}</td>
-                    <td>{e.area}</td>
-                    <td>
-                      <button
-                        className="btn-danger"
-                        type="button"
-                        onClick={() => handleEliminarEvaluado(e.id)}
-                      >
-                        Eliminar
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <DataTable
+            rows={evaluados}
+            columns={[
+              {
+                header: "Nombre",
+                render: (e) => e.nombre,
+                getSortValue: (e) => e.nombre.toLowerCase()
+              },
+              {
+                header: "Puesto",
+                render: (e) => e.puesto,
+                getSortValue: (e) => e.puesto.toLowerCase()
+              },
+              {
+                header: "Área",
+                render: (e) => e.area,
+                getSortValue: (e) => e.area.toLowerCase()
+              },
+              {
+                header: "Acciones",
+                render: (e) => (
+                  <button
+                    className="btn-danger"
+                    type="button"
+                    onClick={() => handleEliminarEvaluado(e.id)}
+                  >
+                    Eliminar
+                  </button>
+                )
+              }
+            ]}
+            searchPlaceholder="Buscar personal..."
+            getSearchText={(e) => `${e.nombre} ${e.puesto} ${e.area}`}
+            initialPageSize={10}
+          />
+
         </section>
 
         {/* Competencias */}
@@ -740,6 +1064,17 @@ function Dashboard() {
                 })
               }
             />
+            <select
+              className="select-cargo"
+              value={nuevaCompetencia.tipo}
+              onChange={(e) =>
+                setNuevaCompetencia({ ...nuevaCompetencia, tipo: e.target.value })
+              }
+            >
+              <option value="likert">Escala 1 a 5</option>
+              <option value="texto">Pregunta abierta</option>
+            </select>
+
             <div className="multi-select">
               <div
                 className="multi-select-trigger"
@@ -781,58 +1116,68 @@ function Dashboard() {
             <button type="submit">➕ Agregar pregunta</button>
           </form>
 
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Orden</th>
-                <th>Clave</th>
-                <th>Título</th>
-                <th>Aplica a</th>
-                <th>Activa</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {competencias.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: "center" }}>
-                    No hay competencias registradas
-                  </td>
-                </tr>
-              ) : (
-                competencias.map((c) => (
-                  <tr key={c.id}>
-                    <td>{c.orden}</td>
-                    <td>{c.clave}</td>
-                    <td>{c.titulo}</td>
-                    <td>
-                      {!c.aplicaA || c.aplicaA.length === 0
-                        ? "Todos"
-                        : c.aplicaA.join(", ")}
-                    </td>
-                    <td>{c.activa ? "Sí" : "No"}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleActiva(c)}
-                        >
-                          {c.activa ? "Desactivar" : "Activar"}
-                        </button>
-                        <button
-                          className="btn-danger"
-                          type="button"
-                          onClick={() => handleEliminarCompetencia(c.id)}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <DataTable
+            rows={competencias}
+            columns={[
+              {
+                header: "Orden",
+                render: (c) => c.orden,
+                getSortValue: (c) => c.orden
+              },
+              {
+                header: "Clave",
+                render: (c) => c.clave,
+                getSortValue: (c) => c.clave.toLowerCase()
+              },
+              {
+                header: "Título",
+                render: (c) => c.titulo,
+                getSortValue: (c) => c.titulo.toLowerCase()
+              },
+              {
+                header: "Aplica a",
+                render: (c) =>
+                  !c.aplicaA || c.aplicaA.length === 0
+                    ? "Todos"
+                    : c.aplicaA.join(", "),
+                getSortValue: (c) =>
+                  (!c.aplicaA || c.aplicaA.length === 0
+                    ? "Todos"
+                    : c.aplicaA.join(", ")).toLowerCase()
+              },
+              {
+                header: "Activa",
+                render: (c) => (c.activa ? "Sí" : "No"),
+                getSortValue: (c) => (c.activa ? 1 : 0)
+              },
+              {
+                header: "Acciones",
+                render: (c) => (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleActiva(c)}
+                    >
+                      {c.activa ? "Desactivar" : "Activar"}
+                    </button>
+                    <button
+                      className="btn-danger"
+                      type="button"
+                      onClick={() => handleEliminarCompetencia(c.id)}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                )
+              }
+            ]}
+            searchPlaceholder="Buscar preguntas..."
+            getSearchText={(c) =>
+              `${c.clave} ${c.titulo} ${(c.descripcion || "")} ${(c.aplicaA || []).join(" ")}`
+            }
+            initialPageSize={10}
+          />
+
         </section>
       </div>
     </div>
@@ -853,8 +1198,10 @@ function EvaluarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [respuestas, setRespuestas] = useState<Record<string, number>>({});
+  const [respuestasLikert, setRespuestasLikert] = useState<Record<string, number>>({});
+  const [respuestasTexto, setRespuestasTexto] = useState<Record<string, string>>({});
   const [comentarios, setComentarios] = useState("");
+
   const [enviado, setEnviado] = useState(false);
 
   useEffect(() => {
@@ -932,9 +1279,11 @@ function EvaluarPage() {
             descripcion: c.descripcion || "",
             orden: c.orden,
             activa: c.activa,
-            aplicaA: c.aplicaA || []
+            aplicaA: c.aplicaA || [],
+            tipo: c.tipo || "likert"
           }))
         );
+
       } catch (e: any) {
         console.error(e);
         setError(e?.message ?? "Error cargando formulario");
@@ -946,9 +1295,14 @@ function EvaluarPage() {
     cargar();
   }, [evaluadorId]);
 
-  function handleCambioRespuesta(clave: string, valor: number) {
-    setRespuestas((prev) => ({ ...prev, [clave]: valor }));
+  function handleCambioRespuestaLikert(clave: string, valor: number) {
+    setRespuestasLikert((prev) => ({ ...prev, [clave]: valor }));
   }
+
+  function handleCambioRespuestaTexto(clave: string, texto: string) {
+    setRespuestasTexto((prev) => ({ ...prev, [clave]: texto }));
+  }
+
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -958,11 +1312,19 @@ function EvaluarPage() {
     }
 
     // Verificar que todas las competencias tengan respuesta
-    const faltantes = competencias.filter((c) => respuestas[c.clave] == null);
-    if (faltantes.length > 0) {
-      alert("Por favor responde todas las preguntas.");
+    // Verificar que todas las competencias tengan respuesta
+    const faltantesLikert = competencias.filter(
+      (c) => c.tipo !== "texto" && respuestasLikert[c.clave] == null
+    );
+    const faltantesTexto = competencias.filter(
+      (c) => c.tipo === "texto" && (!respuestasTexto[c.clave] || !respuestasTexto[c.clave].trim())
+    );
+
+    if (faltantesLikert.length > 0 || faltantesTexto.length > 0) {
+      alert("Por favor responde todas las preguntas (incluyendo las abiertas).");
       return;
     }
+
 
     try {
       // Construir payload para PostgREST
@@ -970,12 +1332,23 @@ function EvaluarPage() {
         evaluador_id: Number(evaluador.id),
         evaluado_id: Number(evaluado.id),
         cargo_evaluador: evaluador.cargo,
-        respuestas: competencias.map((c) => ({
-          competencia_id: Number(c.id),
-          valor: respuestas[c.clave]  // ya validaste que todas tienen respuesta
-        })),
+        respuestas: competencias.map((c) => {
+          if (c.tipo === "texto") {
+            return {
+              competencia_id: Number(c.id),
+              valor: 0,
+              comentario: respuestasTexto[c.clave] || ""
+            };
+          }
+          return {
+            competencia_id: Number(c.id),
+            valor: respuestasLikert[c.clave],
+            comentario: ""
+          };
+        }),
         comentarios: comentarios.trim()
       };
+
 
       // Crear evaluación completa en PostgreSQL
       await apiCrearEvaluacionCompleta(payload);
@@ -1063,8 +1436,13 @@ function EvaluarPage() {
         <section className="panel">
           <h2>📋 Preguntas</h2>
           <p className="sub">
-            Responde cada afirmación usando la escala de 1 a 5 (1 = Nunca ,{`\n`} 2 = Rara vez ,{`\n`} 3 = Algunas veces ,{`\n`} 4 = Casi siempre ,{`\n`} 5 =
-            Excelente).
+            Responde cada afirmación usando la escala de 1 a 5
+            (1 = Nunca
+            2 = Rara vez
+            3 = Algunas veces
+            4 = Casi siempre
+            5 = Excelente).
+            Las preguntas abiertas deben responderse en el cuadro de texto.
           </p>
 
           <form onSubmit={handleSubmit}>
@@ -1077,23 +1455,37 @@ function EvaluarPage() {
                       <p className="sub">{c.descripcion}</p>
                     )}
                   </div>
-                  <div className="pregunta-escalas">
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <label key={n}>
-                        <input
-                          type="radio"
-                          name={c.clave}
-                          value={n}
-                          checked={respuestas[c.clave] === n}
-                          onChange={() => handleCambioRespuesta(c.clave, n)}
-                        />
-                        <span>{n}</span>
-                      </label>
-                    ))}
-                  </div>
+
+                  {c.tipo === "texto" ? (
+                    <div className="comentarios">
+                      <textarea
+                        value={respuestasTexto[c.clave] || ""}
+                        onChange={(e) => handleCambioRespuestaTexto(c.clave, e.target.value)}
+                        rows={3}
+                        placeholder="Escribe tu respuesta..."
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="pregunta-escalas">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <label key={n}>
+                          <input
+                            type="radio"
+                            name={c.clave}
+                            value={n}
+                            checked={respuestasLikert[c.clave] === n}
+                            onChange={() => handleCambioRespuestaLikert(c.clave, n)}
+                          />
+                          <span>{n}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
+
 
             <div className="comentarios">
               <label>
