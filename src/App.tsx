@@ -1063,7 +1063,7 @@ function EvaluarPage() {
         <section className="panel">
           <h2>📋 Preguntas</h2>
           <p className="sub">
-            Responde cada afirmación usando la escala de 1 a 5 (1 = Muy bajo, 5 =
+            Responde cada afirmación usando la escala de 1 a 5 (1 = Nunca ,{`\n`} 2 = Rara vez ,{`\n`} 3 = Algunas veces ,{`\n`} 4 = Casi siempre ,{`\n`} 5 =
             Excelente).
           </p>
 
