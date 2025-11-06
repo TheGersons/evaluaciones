@@ -185,7 +185,7 @@ export default function Resultados() {
             <h2>📊 Sin Resultados</h2>
             <p>No hay evaluaciones completadas todavía.</p>
             <button
-              onClick={() => window.location.href = '/'}
+              onClick={() => navigate('/')}
               style={{
                 marginTop: '16px',
                 padding: '10px 20px',
