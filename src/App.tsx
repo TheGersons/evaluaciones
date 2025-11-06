@@ -715,7 +715,7 @@ function Dashboard() {
           <form className="form-row" onSubmit={handleAgregarCompetencia}>
             <input
               type="text"
-              placeholder="Clave interna (ej: comunicacion_tecnica)"
+              placeholder="Clave interna (ej: Comunicación_pregunta1)"
               value={nuevaCompetencia.clave}
               onChange={(e) =>
                 setNuevaCompetencia({ ...nuevaCompetencia, clave: e.target.value })
@@ -723,7 +723,7 @@ function Dashboard() {
             />
             <input
               type="text"
-              placeholder="Título visible (ej: Comunicación técnica)"
+              placeholder="Título o tema (ej: Comunicación / Responsabilidad / Compromiso)"
               value={nuevaCompetencia.titulo}
               onChange={(e) =>
                 setNuevaCompetencia({ ...nuevaCompetencia, titulo: e.target.value })
@@ -731,7 +731,7 @@ function Dashboard() {
             />
             <input
               type="text"
-              placeholder="Descripción"
+              placeholder="Aqui se escribe la pregunta a realizar"
               value={nuevaCompetencia.descripcion}
               onChange={(e) =>
                 setNuevaCompetencia({
