@@ -38,6 +38,50 @@ export function navigate(path: string) {
   window.location.href = `${BASE_PATH}${clean}`;
 }
 
+const SESSION_KEY = "eval360_admin_session";
+const SESSION_TTL_MS = 15 * 60 * 1000; // 15 minutos
+const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || "1234";
+
+function isSessionValid(): boolean {
+  if (typeof window === "undefined") return false;
+  const raw = window.localStorage.getItem(SESSION_KEY);
+  if (!raw) return false;
+  try {
+    const data = JSON.parse(raw);
+    const lastActivity = typeof data.lastActivity === "number" ? data.lastActivity : 0;
+    const now = Date.now();
+    return now - lastActivity < SESSION_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+function startSession() {
+  if (typeof window === "undefined") return;
+  const now = Date.now();
+  window.localStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({ lastActivity: now })
+  );
+}
+
+function touchSession() {
+  if (!isSessionValid()) return;
+  if (typeof window === "undefined") return;
+  const now = Date.now();
+  window.localStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({ lastActivity: now })
+  );
+}
+
+/*function clearSession() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(SESSION_KEY);
+}
+  */
+
+
 
 
 // =====================================================
@@ -52,28 +96,52 @@ function App() {
     path = path.slice(basePath.length - 1); // deja el primer "/" para comparaciones
   }
 
+  useEffect(() => {
+    function handleActivity() {
+      if (isSessionValid()) {
+        touchSession();
+      }
+    }
+    window.addEventListener("click", handleActivity);
+    window.addEventListener("keydown", handleActivity);
+    return () => {
+      window.removeEventListener("click", handleActivity);
+      window.removeEventListener("keydown", handleActivity);
+    };
+  }, []);
+
   if (path.startsWith("/evaluar")) {
+    // El formulario de evaluación NO requiere PIN
     return <EvaluarPage />;
   }
 
   if (path === "/resultados" || path.startsWith("/resultados")) {
-    const Resultados = React.lazy(() => import('./pages/Resultados'));
+    const Resultados = React.lazy(() => import("./pages/Resultados"));
     return (
-      <React.Suspense fallback={
-        <div className="root">
-          <div className="app">
-            <div className="panel">
-              <p>Cargando resultados...</p>
+      <AdminGate>
+        <React.Suspense
+          fallback={
+            <div className="root">
+              <div className="app">
+                <div className="panel">
+                  <p>Cargando resultados...</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      }>
-        <Resultados />
-      </React.Suspense>
+          }
+        >
+          <Resultados />
+        </React.Suspense>
+      </AdminGate>
     );
   }
 
-  return <Dashboard />;
+  // Dashboard por defecto, protegido
+  return (
+    <AdminGate>
+      <Dashboard />
+    </AdminGate>
+  );
 }
 
 
@@ -300,6 +368,84 @@ function DataTable<T>({
     </div>
   );
 }
+
+
+function AdminGate({ children }: { children: React.ReactNode }) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const [allowed, setAllowed] = useState(() => isSessionValid());
+
+  useEffect(() => {
+    if (allowed) {
+      touchSession();
+    }
+  }, [allowed]);
+
+  if (allowed) {
+    return <>{children}</>;
+  }
+
+  return (
+    <div className="root">
+      <div className="app">
+        <div className="panel" style={{ maxWidth: 480, margin: "40px auto" }}>
+          <h2>🔒 Acceso restringido</h2>
+          <p className="sub">
+            Ingresa el PIN para acceder al panel de administración.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (pin === ADMIN_PIN) {
+                startSession();
+                setAllowed(true);
+                setError("");
+              } else {
+                setError("PIN incorrecto");
+              }
+            }}
+          >
+            <input
+              type="password"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="PIN de acceso"
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                borderRadius: "10px",
+                border: "1px solid #d1d5db",
+                fontSize: "14px",
+                marginBottom: "8px"
+              }}
+            />
+            {error && (
+              <p style={{ color: "#b91c1c", fontSize: "13px", marginBottom: "8px" }}>
+                {error}
+              </p>
+            )}
+            <button
+              type="submit"
+              style={{
+                width: "100%",
+                padding: "10px 16px",
+                borderRadius: "10px",
+                border: "none",
+                background: "#4f46e5",
+                color: "white",
+                fontWeight: 600,
+                cursor: "pointer"
+              }}
+            >
+              Entrar
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 
 function Dashboard() {
@@ -1136,7 +1282,8 @@ function Dashboard() {
                   border: "1px solid #d1d5db",
                   borderRadius: "8px",
                   fontSize: "14px",
-                  color: "#ffffffff"
+                  background: "#ffffff",  // fondo blanco
+                  color: "#111827"
                 }}
                 onFocus={(e) => e.target.select()}
               />
@@ -1314,19 +1461,16 @@ function EvaluarPage() {
       return;
     }
 
-    // Verificar que todas las competencias tengan respuesta
-    // Verificar que todas las competencias tengan respuesta
+    // Verificar SOLO las competencias de tipo escala (likert)
     const faltantesLikert = competencias.filter(
       (c) => c.tipo !== "texto" && respuestasLikert[c.clave] == null
     );
-    const faltantesTexto = competencias.filter(
-      (c) => c.tipo === "texto" && (!respuestasTexto[c.clave] || !respuestasTexto[c.clave].trim())
-    );
 
-    if (faltantesLikert.length > 0 || faltantesTexto.length > 0) {
-      alert("Por favor responde todas las preguntas (incluyendo las abiertas).");
+    if (faltantesLikert.length > 0) {
+      alert("Por favor responde todas las preguntas de escala.");
       return;
     }
+
 
 
     try {
@@ -1340,7 +1484,7 @@ function EvaluarPage() {
             return {
               competencia_id: Number(c.id),
               valor: 0,
-              comentario: respuestasTexto[c.clave] || ""
+              comentario: (respuestasTexto[c.clave] || "").trim()
             };
           }
           return {
