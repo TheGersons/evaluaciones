@@ -1,73 +1,42 @@
-# React + TypeScript + Vite
+# Evaluación 360
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend en React + Vite + TypeScript para gestionar un flujo de evaluación 360°:
 
-Currently, two official plugins are available:
+- Registro de evaluados (personas a evaluar)
+- Registro de evaluadores y envío de enlaces personalizados
+- Llenado de evaluaciones por parte de los evaluadores
+- Panel de administración (dashboard)
+- Panel de resultados agregados con gráficos y exportación a CSV
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+El backend expuesto es un API tipo PostgREST (PostgreSQL ↔ HTTP).
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tecnologías
 
-## Expanding the ESLint configuration
+- React + TypeScript
+- Vite
+- Recharts (gráficas)
+- Nginx como reverse proxy / servidor estático
+- API REST sobre PostgreSQL (PostgREST o similar)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+---
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Requisitos
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- Node.js **>= 20.19** (Vite 7 no soporta Node 18)
+- npm
+- API REST disponible con los endpoints esperados (ejemplo típico PostgREST)
+- Servidor Linux con Nginx para producción (opcional pero usado en este proyecto)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+---
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Variables de entorno
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+El frontend usa una variable principal:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- `VITE_API_BASE_URL`  
+  URL base del API. Si no se define, por defecto usa:
+
+  ```txt
+  /eval360/api
