@@ -640,102 +640,11 @@ function Dashboard() {
   // Render Dashboard
   // ==========================
 
-  {
-    mostrarModalLink && (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.4)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000
-        }}
-        onClick={() => setMostrarModalLink(false)}
-      >
-        <div
-          style={{
-            background: "white",
-            padding: "24px",
-            borderRadius: "12px",
-            boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
-            width: "90%",
-            maxWidth: "480px",
-            textAlign: "center"
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h3 style={{ marginBottom: "12px", color: "#111827" }}>Enlace de evaluación</h3>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              justifyContent: "center",
-              marginBottom: "16px",
-              flexWrap: "wrap"
-            }}
-          >
-            <input
-              type="text"
-              readOnly
-              value={linkCopiar}
-              style={{
-                flex: 1,
-                minWidth: "240px",
-                padding: "8px 10px",
-                border: "1px solid #d1d5db",
-                borderRadius: "8px",
-                fontSize: "14px",
-                color: "#111827"
-              }}
-              onFocus={(e) => e.target.select()}
-            />
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(linkCopiar);
-                  alert("Enlace copiado al portapapeles");
-                } catch {
-                  alert("Copia no soportada, seleccione el texto y cópielo manualmente.");
-                }
-              }}
-              style={{
-                background: "#4f46e5",
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                padding: "8px 12px",
-                cursor: "pointer",
-                fontWeight: 600
-              }}
-            >
-              Copiar
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={() => setMostrarModalLink(false)}
-            style={{
-              padding: "6px 12px",
-              background: "#6b7280",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              cursor: "pointer"
-            }}
-          >
-            Cerrar
-          </button>
-        </div>
-      </div>
-    )
-  }
+
 
 
   return (
+
     <div className="root">
       <div className="app">
         <header className="header">
@@ -1180,7 +1089,101 @@ function Dashboard() {
 
         </section>
       </div>
+      {mostrarModalLink && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(255, 255, 255, 0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000
+          }}
+          onClick={() => setMostrarModalLink(false)}
+        >
+          <div
+            style={{
+              background: "white",
+              padding: "24px",
+              borderRadius: "12px",
+              boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
+              width: "90%",
+              maxWidth: "480px",
+              textAlign: "center"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginBottom: "12px", color: "#111827" }}>Enlace de evaluación</h3>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                justifyContent: "center",
+                marginBottom: "16px",
+                flexWrap: "wrap"
+              }}
+            >
+              <input
+                type="text"
+                readOnly
+                value={linkCopiar}
+                style={{
+                  flex: 1,
+                  minWidth: "240px",
+                  padding: "8px 10px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  color: "#ffffffff"
+                }}
+                onFocus={(e) => e.target.select()}
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(linkCopiar);
+                    alert("Enlace copiado al portapapeles");
+                  } catch {
+                    alert("Copia no soportada, seleccione el texto y cópielo manualmente.");
+                  }
+                }}
+                style={{
+                  background: "#4f46e5",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  fontWeight: 600
+                }}
+              >
+                Copiar
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMostrarModalLink(false)}
+              style={{
+                padding: "6px 12px",
+                background: "#6b7280",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer"
+              }}
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
+
+
   );
 }
 
