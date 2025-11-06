@@ -18,29 +18,45 @@ import {
   apiCreateEvaluador,
   apiDeleteEvaluador,
   apiGetEvaluador,
-  apiUpdateEvaluadorEstado
+  apiUpdateEvaluadorEstado,
+  apiFetchDashboardStats
 } from "./services/api";
 
-// ⚠️ SERVICIOS FIREBASE (todavía en uso - migrar en Fase 3 y 4)
 import {
-  fetchCompetencias,
-  createCompetencia,
-  toggleCompetenciaActiva,
-  createEvaluacion
-} from "./services/firestore";
+  apiFetchCompetenciasConCargos,
+  apiCreateCompetencia,
+  apiSetAplicaCargos,
+  apiToggleCompetenciaActiva,
+  apiCrearEvaluacionCompleta,
+} from "./services/api";
+
+
+const BASE_PATH = import.meta.env.BASE_URL || "/";
+
+export function navigate(path: string) {
+  const clean = path.startsWith("/") ? path.slice(1) : path;
+  window.location.href = `${BASE_PATH}${clean}`;
+}
+
+
 
 // =====================================================
 // Utilidad: decidir qué vista mostrar según la URL
 // =====================================================
 function App() {
-  const path = window.location.pathname;
-  
+  const basePath = import.meta.env.BASE_URL || "/";
+  let path = window.location.pathname;
+
+  // Normalizar: quitar el prefijo base (/eval360/)
+  if (path.startsWith(basePath)) {
+    path = path.slice(basePath.length - 1); // deja el primer "/" para comparaciones
+  }
+
   if (path.startsWith("/evaluar")) {
     return <EvaluarPage />;
   }
-  
-  if (path === "/eval360/resultados" || path.startsWith("/resultados")) {
-    // Lazy load del componente de resultados
+
+  if (path === "/resultados" || path.startsWith("/resultados")) {
     const Resultados = React.lazy(() => import('./pages/Resultados'));
     return (
       <React.Suspense fallback={
@@ -56,9 +72,10 @@ function App() {
       </React.Suspense>
     );
   }
-  
+
   return <Dashboard />;
 }
+
 
 export default App;
 
@@ -123,10 +140,11 @@ function Dashboard() {
       setLoading(true);
       setError(null);
 
-      const [evaluadosRes, evaluadoresRes, competenciasRes] = await Promise.all([
+      const [evaluadosRes, evaluadoresRes, competenciasRes, statsRes] = await Promise.all([
         apiFetchEvaluados(),
         apiFetchEvaluadores(), // ✅ Ahora usa PostgREST
-        fetchCompetencias()    // ⚠️ Todavía Firebase (migrar en Fase 3)
+        apiFetchCompetenciasConCargos(),
+        apiFetchDashboardStats()
       ]);
 
       // Mapear evaluados desde PostgreSQL
@@ -154,14 +172,21 @@ function Dashboard() {
         }))
       );
 
-      setCompetencias(competenciasRes);
+      setCompetencias(
+        competenciasRes.map((c) => ({
+          id: String(c.id),
+          clave: c.clave,
+          titulo: c.titulo,
+          descripcion: c.descripcion || "",
+          orden: c.orden,
+          activa: c.activa,
+          aplicaA: c.aplicaA || []
+        }))
+      );
+
 
       // Stats calculadas desde los datos
-      setStats({
-        totalEvaluadores: evaluadoresRes.length,
-        totalEvaluados: evaluadosRes.length,
-        totalEvaluaciones: 0 // TODO: Fase 5 - contar desde evaluaciones
-      });
+      setStats(statsRes);
     } catch (e: any) {
       console.error(e);
       setError(e?.message ?? "Error cargando datos");
@@ -259,7 +284,7 @@ function Dashboard() {
 
   async function handleEnviarCorreosMasivo() {
     const pendientes = evaluadores.filter(e => e.estado === 'Pendiente');
-    
+
     if (pendientes.length === 0) {
       alert("No hay evaluadores pendientes para enviar correos");
       return;
@@ -269,7 +294,7 @@ function Dashboard() {
 
     try {
       setLoading(true);
-      
+
       // Llamar al backend de NestJS
       const response = await fetch('http://192.168.3.87/eval360/api/email/enviar-masivo', {
         method: 'POST',
@@ -293,7 +318,7 @@ function Dashboard() {
 
       const result = await response.json();
       alert(`✅ ${result.enviados || pendientes.length} correos enviados correctamente`);
-      
+
     } catch (e: any) {
       console.error(e);
       alert("Error enviando correos: " + e.message);
@@ -332,23 +357,29 @@ function Dashboard() {
     }
 
     try {
-      await createCompetencia({
+      // 1. Crear la competencia
+      const competenciaCreada = await apiCreateCompetencia({
         clave: nuevaCompetencia.clave.trim(),
         titulo: nuevaCompetencia.titulo.trim(),
         descripcion: nuevaCompetencia.descripcion.trim(),
-        aplicaA: nuevaCompetencia.aplicaA
+        orden: competencias.length // Asignar el siguiente orden disponible
       });
+
+      // 2. Asignar los cargos seleccionados
+      await apiSetAplicaCargos(competenciaCreada.id, nuevaCompetencia.aplicaA);
+
       setNuevaCompetencia({ clave: "", titulo: "", descripcion: "", aplicaA: [] });
+      setOpenCargos(false);
       await cargarTodo();
     } catch (e: any) {
       console.error(e);
-      alert("Error agregando competencia");
+      alert("Error agregando competencia: " + e.message);
     }
   }
 
   async function handleToggleActiva(c: Competencia) {
     try {
-      await toggleCompetenciaActiva(c.id, !c.activa);
+      await apiToggleCompetenciaActiva(Number(c.id), !c.activa);
       await cargarTodo();
     } catch (e: any) {
       console.error(e);
@@ -359,11 +390,10 @@ function Dashboard() {
   async function handleEliminarCompetencia(id: string) {
     if (!confirm("¿Eliminar esta competencia? Esta acción no se puede deshacer.")) return;
     try {
-      // TODO: Migrar a apiDeleteCompetencia cuando se migre Firebase
-      // Por ahora solo desactivamos
       const comp = competencias.find(c => c.id === id);
       if (comp) {
-        await toggleCompetenciaActiva(id, false);
+        // la “eliminación” se implementa como desactivar en PostgreSQL
+        await apiToggleCompetenciaActiva(Number(id), false);
         alert("Competencia desactivada (no se puede eliminar si tiene evaluaciones asociadas)");
         await cargarTodo();
       }
@@ -372,6 +402,7 @@ function Dashboard() {
       alert("Error eliminando competencia");
     }
   }
+
 
   function toggleCargoAplica(cargo: string) {
     setNuevaCompetencia((prev) => {
@@ -404,7 +435,7 @@ function Dashboard() {
               <p>Administra el personal a evaluar, los evaluadores y las preguntas.</p>
             </div>
             <button
-              onClick={() => window.location.href = '/resultados'}
+              onClick={() => navigate('/resultados')}
               style={{
                 padding: '10px 20px',
                 background: '#10b981',
@@ -864,7 +895,7 @@ function EvaluarPage() {
         }
 
         // ⚠️ Competencias todavía desde Firebase
-        const listaCompetencias = await fetchCompetencias();
+        const listaCompetencias = await apiFetchCompetenciasConCargos();
 
         // Filtrar competencias por cargo y activas
         const cargo = ev.cargo;
@@ -893,7 +924,17 @@ function EvaluarPage() {
           activo: evaluadoAsignado.activo
         });
 
-        setCompetencias(compsFiltradas);
+        setCompetencias(
+          compsFiltradas.map((c) => ({
+            id: String(c.id),
+            clave: c.clave,
+            titulo: c.titulo,
+            descripcion: c.descripcion || "",
+            orden: c.orden,
+            activa: c.activa,
+            aplicaA: c.aplicaA || []
+          }))
+        );
       } catch (e: any) {
         console.error(e);
         setError(e?.message ?? "Error cargando formulario");
@@ -924,22 +965,29 @@ function EvaluarPage() {
     }
 
     try {
-      // ⚠️ Todavía usa Firebase - migrar en Fase 5
-      await createEvaluacion({
-        evaluadorId: evaluador.id,
-        evaluadoId: evaluado.id,
-        cargoEvaluador: evaluador.cargo,
-        respuestas,
+      // Construir payload para PostgREST
+      const payload = {
+        evaluador_id: Number(evaluador.id),
+        evaluado_id: Number(evaluado.id),
+        cargo_evaluador: evaluador.cargo,
+        respuestas: competencias.map((c) => ({
+          competencia_id: Number(c.id),
+          valor: respuestas[c.clave]  // ya validaste que todas tienen respuesta
+        })),
         comentarios: comentarios.trim()
-      });
+      };
 
-      // ✅ Actualizar estado en PostgreSQL
+      // Crear evaluación completa en PostgreSQL
+      await apiCrearEvaluacionCompleta(payload);
+
+      // Actualizar estado del evaluador
       await apiUpdateEvaluadorEstado(Number(evaluador.id), "Completada");
       setEnviado(true);
     } catch (e: any) {
       console.error(e);
       alert("Error guardando la evaluación.");
     }
+
   }
 
   if (loading) {

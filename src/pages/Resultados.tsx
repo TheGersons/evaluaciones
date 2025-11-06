@@ -23,6 +23,7 @@ import {
   apiFetchCompetenciasConCargos 
 } from '../services/api';
 import type { EvaluadoDTO, /*EvaluacionDTO,*/ RespuestaDTO } from '../services/api';
+import { navigate } from '../App';
 
 interface ResultadoEvaluado {
   evaluado: EvaluadoDTO;
@@ -257,7 +258,7 @@ export default function Resultados() {
                 📥 Exportar Excel
               </button>
               <button
-                onClick={() => window.location.href = '/'}
+                onClick={() => navigate('/')}
                 style={{
                   padding: '10px 20px',
                   background: '#6b7280',

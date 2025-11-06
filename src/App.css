@@ -457,3 +457,25 @@ body {
     justify-content: space-around;
   }
 }
+
+
+  /* Tarjeta del evaluado */
+.evaluado-card {
+  background: #f3f4f6;              /* gris claro como otras tarjetas */
+  border: 1px solid #e5e7eb;        /* gris sutil */
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-top: 12px;
+  color: #111827 !important;                   /* texto negro-azulado */
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.1);
+}
+
+.evaluado-card p {
+  margin: 6px 0;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.evaluado-card strong {
+  color: #374151;                   /* gris oscuro para las etiquetas */
+}
