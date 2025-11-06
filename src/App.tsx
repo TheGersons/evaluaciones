@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import "./App.css";
 
 import type {
@@ -9,7 +9,7 @@ import type {
   DashboardStats
 } from "./types";
 
-// ✅ TODOS LOS SERVICIOS POSTGREST (migración completa)
+// ✅ SERVICIOS POSTGREST (ya migrados)
 import {
   apiFetchEvaluados,
   apiCreateEvaluado,
@@ -18,23 +18,45 @@ import {
   apiCreateEvaluador,
   apiDeleteEvaluador,
   apiGetEvaluador,
-  apiUpdateEvaluadorEstado,
-  apiFetchCompetenciasConCargos,
-  apiCreateCompetencia,
-  apiSetAplicaCargos,
-  apiToggleCompetenciaActiva,
-  apiCrearEvaluacionCompleta,
-  apiFetchEvaluaciones
+  apiUpdateEvaluadorEstado
 } from "./services/api";
+
+// ⚠️ SERVICIOS FIREBASE (todavía en uso - migrar en Fase 3 y 4)
+import {
+  fetchCompetencias,
+  createCompetencia,
+  toggleCompetenciaActiva,
+  createEvaluacion
+} from "./services/firestore";
 
 // =====================================================
 // Utilidad: decidir qué vista mostrar según la URL
 // =====================================================
 function App() {
   const path = window.location.pathname;
-  if (path.includes("/evaluar")) {
+  
+  if (path.startsWith("/evaluar")) {
     return <EvaluarPage />;
   }
+  
+  if (path === "/eval360/resultados" || path.startsWith("/resultados")) {
+    // Lazy load del componente de resultados
+    const Resultados = React.lazy(() => import('./pages/Resultados'));
+    return (
+      <React.Suspense fallback={
+        <div className="root">
+          <div className="app">
+            <div className="panel">
+              <p>Cargando resultados...</p>
+            </div>
+          </div>
+        </div>
+      }>
+        <Resultados />
+      </React.Suspense>
+    );
+  }
+  
   return <Dashboard />;
 }
 
@@ -95,20 +117,19 @@ function Dashboard() {
       )
       : 0;
 
-  // ✅ CARGA TODO DESDE POSTGREST
+  // ✅ MIGRADO A POSTGREST
   async function cargarTodo() {
     try {
       setLoading(true);
       setError(null);
 
-      const [evaluadosRes, evaluadoresRes, competenciasRes, evaluacionesRes] = await Promise.all([
+      const [evaluadosRes, evaluadoresRes, competenciasRes] = await Promise.all([
         apiFetchEvaluados(),
-        apiFetchEvaluadores(),
-        apiFetchCompetenciasConCargos(),
-        apiFetchEvaluaciones()
+        apiFetchEvaluadores(), // ✅ Ahora usa PostgREST
+        fetchCompetencias()    // ⚠️ Todavía Firebase (migrar en Fase 3)
       ]);
 
-      // Mapear evaluados
+      // Mapear evaluados desde PostgreSQL
       setEvaluados(
         evaluadosRes.map((e) => ({
           id: String(e.id),
@@ -120,7 +141,7 @@ function Dashboard() {
         }))
       );
 
-      // Mapear evaluadores
+      // Mapear evaluadores desde PostgreSQL
       setEvaluadores(
         evaluadoresRes.map((e) => ({
           id: String(e.id),
@@ -133,24 +154,13 @@ function Dashboard() {
         }))
       );
 
-      // Mapear competencias
-      setCompetencias(
-        competenciasRes.map((c) => ({
-          id: String(c.id),
-          clave: c.clave,
-          titulo: c.titulo,
-          descripcion: c.descripcion || "",
-          orden: c.orden,
-          activa: c.activa,
-          aplicaA: c.aplicaA || []
-        }))
-      );
+      setCompetencias(competenciasRes);
 
-      // Stats
+      // Stats calculadas desde los datos
       setStats({
         totalEvaluadores: evaluadoresRes.length,
         totalEvaluados: evaluadosRes.length,
-        totalEvaluaciones: evaluacionesRes.length
+        totalEvaluaciones: 0 // TODO: Fase 5 - contar desde evaluaciones
       });
     } catch (e: any) {
       console.error(e);
@@ -165,7 +175,7 @@ function Dashboard() {
   }, []);
 
   // ==========================
-  // Handlers Evaluados
+  // Handlers Evaluados (✅ Ya migrados)
   // ==========================
 
   async function handleAgregarEvaluado(e: React.FormEvent) {
@@ -202,7 +212,7 @@ function Dashboard() {
   }
 
   // ==========================
-  // Handlers Evaluadores
+  // Handlers Evaluadores (✅ MIGRADOS A POSTGREST)
   // ==========================
 
   async function handleAgregarEvaluador(e: React.FormEvent) {
@@ -247,8 +257,54 @@ function Dashboard() {
     }
   }
 
+  async function handleEnviarCorreosMasivo() {
+    const pendientes = evaluadores.filter(e => e.estado === 'Pendiente');
+    
+    if (pendientes.length === 0) {
+      alert("No hay evaluadores pendientes para enviar correos");
+      return;
+    }
+
+    if (!confirm(`¿Enviar ${pendientes.length} correos de evaluación?`)) return;
+
+    try {
+      setLoading(true);
+      
+      // Llamar al backend de NestJS
+      const response = await fetch('http://192.168.3.87/eval360/api/email/enviar-masivo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          evaluadores: pendientes.map(ev => ({
+            id: ev.id,
+            nombre: ev.nombre,
+            email: ev.email,
+            cargo: ev.cargo,
+            evaluadoNombre: evaluados.find(e => e.id === ev.evaluadoId)?.nombre || 'Desconocido'
+          }))
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Error en el servidor');
+      }
+
+      const result = await response.json();
+      alert(`✅ ${result.enviados || pendientes.length} correos enviados correctamente`);
+      
+    } catch (e: any) {
+      console.error(e);
+      alert("Error enviando correos: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function handleCopiarLinkEvaluacion(evaluador: Evaluador) {
     const base = window.location.origin;
+    // Usar la ruta base correcta
     const basePath = import.meta.env.BASE_URL || '/';
     const url = `${base}${basePath}evaluar?evaluadorId=${encodeURIComponent(evaluador.id)}`;
 
@@ -265,7 +321,7 @@ function Dashboard() {
   }
 
   // ==========================
-  // Handlers Competencias
+  // Handlers Competencias (⚠️ Todavía Firebase - migrar Fase 3)
   // ==========================
 
   async function handleAgregarCompetencia(e: React.FormEvent) {
@@ -276,38 +332,44 @@ function Dashboard() {
     }
 
     try {
-      // 1. Crear la competencia
-      const resultado = await apiCreateCompetencia({
+      await createCompetencia({
         clave: nuevaCompetencia.clave.trim(),
         titulo: nuevaCompetencia.titulo.trim(),
         descripcion: nuevaCompetencia.descripcion.trim(),
-        orden: competencias.length
+        aplicaA: nuevaCompetencia.aplicaA
       });
-
-      // PostgREST devuelve un array, tomar el primer elemento
-      const competenciaCreada = Array.isArray(resultado) ? resultado[0] : resultado;
-
-      // 2. Asignar los cargos seleccionados (solo si hay cargos)
-      if (nuevaCompetencia.aplicaA && nuevaCompetencia.aplicaA.length > 0) {
-        await apiSetAplicaCargos(competenciaCreada.id, nuevaCompetencia.aplicaA);
-      }
-
       setNuevaCompetencia({ clave: "", titulo: "", descripcion: "", aplicaA: [] });
-      setOpenCargos(false);
       await cargarTodo();
     } catch (e: any) {
       console.error(e);
-      alert("Error agregando competencia: " + e.message);
+      alert("Error agregando competencia");
     }
   }
 
   async function handleToggleActiva(c: Competencia) {
     try {
-      await apiToggleCompetenciaActiva(Number(c.id), !c.activa);
+      await toggleCompetenciaActiva(c.id, !c.activa);
       await cargarTodo();
     } catch (e: any) {
       console.error(e);
       alert("Error actualizando competencia");
+    }
+  }
+
+  async function handleEliminarCompetencia(id: string) {
+    if (!confirm("¿Eliminar esta competencia? Esta acción no se puede deshacer.")) return;
+    try {
+      // TODO: Migrar a apiDeleteCompetencia cuando se migre Firebase
+      // Por ahora solo desactivamos
+      const comp = competencias.find(c => c.id === id);
+      if (comp) {
+        await toggleCompetenciaActiva(id, false);
+        alert("Competencia desactivada (no se puede eliminar si tiene evaluaciones asociadas)");
+        await cargarTodo();
+      }
+    } catch (e: any) {
+      console.error(e);
+      alert("Error eliminando competencia");
     }
   }
 
@@ -336,8 +398,29 @@ function Dashboard() {
     <div className="root">
       <div className="app">
         <header className="header">
-          <h1>🎯 Evaluación 360° - Dashboard</h1>
-          <p>Administra el personal a evaluar, los evaluadores y las preguntas.</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h1>🎯 Evaluación 360° - Dashboard</h1>
+              <p>Administra el personal a evaluar, los evaluadores y las preguntas.</p>
+            </div>
+            <button
+              onClick={() => window.location.href = '/resultados'}
+              style={{
+                padding: '10px 20px',
+                background: '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              📊 Ver Resultados
+            </button>
+          </div>
         </header>
 
         {loading && (
@@ -388,6 +471,28 @@ function Dashboard() {
             Registra manualmente a las personas que van a evaluar. Cada una tendrá
             un link único de evaluación que puedes copiar.
           </p>
+
+          <div style={{ marginBottom: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handleEnviarCorreosMasivo}
+              disabled={loading || evaluadores.filter(e => e.estado === 'Pendiente').length === 0}
+              style={{
+                padding: '10px 20px',
+                background: loading ? '#9ca3af' : '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontWeight: '600',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              📧 {loading ? 'Enviando...' : `Enviar ${evaluadores.filter(e => e.estado === 'Pendiente').length} correos pendientes`}
+            </button>
+          </div>
 
           <form className="form-row" onSubmit={handleAgregarEvaluador}>
             <input
@@ -676,12 +781,21 @@ function Dashboard() {
                     </td>
                     <td>{c.activa ? "Sí" : "No"}</td>
                     <td>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleActiva(c)}
-                      >
-                        {c.activa ? "Desactivar" : "Activar"}
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleActiva(c)}
+                        >
+                          {c.activa ? "Desactivar" : "Activar"}
+                        </button>
+                        <button
+                          className="btn-danger"
+                          type="button"
+                          onClick={() => handleEliminarCompetencia(c.id)}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -724,7 +838,7 @@ function EvaluarPage() {
           return;
         }
 
-        // Obtener evaluador
+        // ✅ Obtener evaluador desde PostgreSQL
         const ev = await apiGetEvaluador(Number(evaluadorId));
 
         if (!ev) {
@@ -739,7 +853,7 @@ function EvaluarPage() {
           return;
         }
 
-        // Obtener el evaluado asignado
+        // ✅ Obtener el evaluado asignado
         const evaluadosRes = await apiFetchEvaluados();
         const evaluadoAsignado = evaluadosRes.find(e => e.id === ev.evaluado_id);
 
@@ -749,8 +863,8 @@ function EvaluarPage() {
           return;
         }
 
-        // Obtener competencias
-        const listaCompetencias = await apiFetchCompetenciasConCargos();
+        // ⚠️ Competencias todavía desde Firebase
+        const listaCompetencias = await fetchCompetencias();
 
         // Filtrar competencias por cargo y activas
         const cargo = ev.cargo;
@@ -779,17 +893,7 @@ function EvaluarPage() {
           activo: evaluadoAsignado.activo
         });
 
-        setCompetencias(
-          compsFiltradas.map((c) => ({
-            id: String(c.id),
-            clave: c.clave,
-            titulo: c.titulo,
-            descripcion: c.descripcion || "",
-            orden: c.orden,
-            activa: c.activa,
-            aplicaA: c.aplicaA || []
-          }))
-        );
+        setCompetencias(compsFiltradas);
       } catch (e: any) {
         console.error(e);
         setError(e?.message ?? "Error cargando formulario");
@@ -820,24 +924,21 @@ function EvaluarPage() {
     }
 
     try {
-      // Convertir respuestas de { clave: valor } a { competencia_id: valor }
-      const respuestasArray = competencias.map((c) => ({
-        competencia_id: Number(c.id),
-        valor: respuestas[c.clave]
-      }));
-
-      await apiCrearEvaluacionCompleta({
-        evaluador_id: Number(evaluador.id),
-        evaluado_id: Number(evaluado.id),
-        cargo_evaluador: evaluador.cargo,
-        respuestas: respuestasArray,
+      // ⚠️ Todavía usa Firebase - migrar en Fase 5
+      await createEvaluacion({
+        evaluadorId: evaluador.id,
+        evaluadoId: evaluado.id,
+        cargoEvaluador: evaluador.cargo,
+        respuestas,
         comentarios: comentarios.trim()
       });
 
+      // ✅ Actualizar estado en PostgreSQL
+      await apiUpdateEvaluadorEstado(Number(evaluador.id), "Completada");
       setEnviado(true);
     } catch (e: any) {
       console.error(e);
-      alert("Error guardando la evaluación: " + e.message);
+      alert("Error guardando la evaluación.");
     }
   }
 
@@ -904,15 +1005,10 @@ function EvaluarPage() {
 
         <section className="panel">
           <h2>👤 Persona a evaluar</h2>
-          <div style={{ 
-            background: '#f3f4f6', 
-            padding: '16px', 
-            borderRadius: '10px',
-            border: '2px solid #4f46e5'
-          }}>
-            <p><strong>Nombre:</strong> {evaluado?.nombre}</p>
-            <p><strong>Puesto:</strong> {evaluado?.puesto}</p>
-            <p><strong>Área:</strong> {evaluado?.area}</p>
+          <div className="evaluado-card">
+            <p><strong>👤 Nombre:</strong> {evaluado?.nombre}</p>
+            <p><strong>💼 Puesto:</strong> {evaluado?.puesto}</p>
+            <p><strong>🏢 Área:</strong> {evaluado?.area}</p>
           </div>
         </section>
 
