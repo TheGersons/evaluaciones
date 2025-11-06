@@ -1,6 +1,8 @@
 // src/App.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import "./App.css";
+
+import * as XLSX from "xlsx"
 
 import type {
   Evaluado,
@@ -19,7 +21,9 @@ import {
   apiDeleteEvaluador,
   apiGetEvaluador,
   apiUpdateEvaluadorEstado,
-  apiFetchDashboardStats
+  apiFetchDashboardStats,
+  apiImportEvaluadoresBatch,
+  type BulkEvaluadorInput
 } from "./services/api";
 
 import {
@@ -502,6 +506,9 @@ function Dashboard() {
   const [mostrarModalLink, setMostrarModalLink] = useState(false);
   const [linkCopiar, setLinkCopiar] = useState("");
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importando, setImportando] = useState(false);
+
 
   // ✅ MIGRADO A POSTGREST
   async function cargarTodo() {
@@ -704,6 +711,88 @@ function Dashboard() {
     setMostrarModalLink(true);
   }
 
+  function handleClickImportarArchivo() {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  }
+
+  async function handleArchivoImportado(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setImportando(true);
+
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+
+      const firstSheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[firstSheetName];
+
+      // Convertir a matriz de filas (sin usar cabeceras)
+      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        raw: true
+      }) as any[][];
+
+      // Esperamos: sin encabezados, columnas:
+      // 0: nombre
+      // 1: email
+      // 2: evaluado_nombre
+      // 3: cargo
+      const parsed: BulkEvaluadorInput[] = [];
+
+      for (const row of rows) {
+        if (!row || row.length === 0) continue; // fila vacía
+
+        const nombre = String(row[0] ?? "").trim();
+        const email = String(row[1] ?? "").trim();
+        const evaluadoNombre = String(row[2] ?? "").trim();
+        const cargo = String(row[3] ?? "").trim();
+
+        // Saltar filas completamente vacías
+        if (!nombre && !email && !evaluadoNombre && !cargo) continue;
+
+        // Validación básica en frontend
+        if (!nombre || !email || !evaluadoNombre || !cargo) {
+          throw new Error(
+            `Fila inválida: nombre, email, evaluado y cargo son obligatorios.\n` +
+            `Revisa que el archivo no tenga encabezados o filas incompletas.`
+          );
+        }
+
+        parsed.push({
+          nombre,
+          email,
+          evaluado_nombre: evaluadoNombre,
+          cargo
+        });
+      }
+
+      if (parsed.length === 0) {
+        alert("El archivo no contiene filas válidas.");
+        return;
+      }
+
+      // Llamar backend transaccional
+      const resp = await apiImportEvaluadoresBatch(parsed);
+
+      alert(`Se importaron ${resp.insertados} evaluadores correctamente.`);
+      await cargarTodo();
+    } catch (err: any) {
+      console.error(err);
+      alert(
+        `Error importando evaluadores:\n` +
+        (err?.message || "Revisa el archivo y los nombres de evaluados.")
+      );
+    } finally {
+      setImportando(false);
+    }
+  }
+
+
 
   // ==========================
   // Handlers Competencias (⚠️ Todavía Firebase - migrar Fase 3)
@@ -867,6 +956,33 @@ function Dashboard() {
             Registra manualmente a las personas que van a evaluar. Cada una tendrá
             un link único de evaluación que puedes copiar.
           </p>
+          {/* Botón de importación */}
+          <div style={{ marginBottom: "12px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={handleClickImportarArchivo}
+              disabled={importando}
+              style={{
+                padding: "8px 16px",
+                borderRadius: "10px",
+                border: "none",
+                background: "#10b981",
+                color: "white",
+                fontWeight: 600,
+                cursor: importando ? "not-allowed" : "pointer"
+              }}
+            >
+              {importando ? "Importando..." : "📂 Importar Excel / CSV"}
+            </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              style={{ display: "none" }}
+              onChange={handleArchivoImportado}
+            />
+          </div>
 
           <div style={{ marginBottom: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <button

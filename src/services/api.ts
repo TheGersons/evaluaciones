@@ -106,6 +106,14 @@ export interface ConfiguracionDTO {
   valor: string;
 }
 
+export interface BulkEvaluadorInput {
+  nombre: string;
+  email: string;
+  evaluado_nombre: string;
+  cargo: string;
+}
+
+
 // =====================================================
 // EVALUADOS
 // =====================================================
@@ -203,6 +211,16 @@ export async function apiDeleteEvaluador(id: number): Promise<void> {
     method: 'DELETE',
   });
 }
+
+export async function apiImportEvaluadoresBatch(
+  items: BulkEvaluadorInput[]
+): Promise<{ insertados: number }> {
+  return apiFetch<{ insertados: number }>("/rpc/import_evaluadores_batch", {
+    method: "POST",
+    body: JSON.stringify({ p_items: items })
+  });
+}
+
 
 // =====================================================
 // COMPETENCIAS
