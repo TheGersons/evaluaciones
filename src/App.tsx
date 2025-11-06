@@ -9,7 +9,7 @@ import type {
   DashboardStats
 } from "./types";
 
-// ✅ SERVICIOS POSTGREST (ya migrados)
+// ✅ TODOS LOS SERVICIOS POSTGREST (migración completa)
 import {
   apiFetchEvaluados,
   apiCreateEvaluado,
@@ -18,23 +18,20 @@ import {
   apiCreateEvaluador,
   apiDeleteEvaluador,
   apiGetEvaluador,
-  apiUpdateEvaluadorEstado
+  apiFetchCompetenciasConCargos,
+  apiCreateCompetencia,
+  apiSetAplicaCargos,
+  apiToggleCompetenciaActiva,
+  apiCrearEvaluacionCompleta,
+  apiFetchEvaluaciones
 } from "./services/api";
-
-// ⚠️ SERVICIOS FIREBASE (todavía en uso - migrar en Fase 3 y 4)
-import {
-  fetchCompetencias,
-  createCompetencia,
-  toggleCompetenciaActiva,
-  createEvaluacion
-} from "./services/firestore";
 
 // =====================================================
 // Utilidad: decidir qué vista mostrar según la URL
 // =====================================================
 function App() {
   const path = window.location.pathname;
-  if (path.startsWith("/evaluar")) {
+  if (path.includes("/evaluar")) {
     return <EvaluarPage />;
   }
   return <Dashboard />;
@@ -97,19 +94,20 @@ function Dashboard() {
       )
       : 0;
 
-  // ✅ MIGRADO A POSTGREST
+  // ✅ CARGA TODO DESDE POSTGREST
   async function cargarTodo() {
     try {
       setLoading(true);
       setError(null);
 
-      const [evaluadosRes, evaluadoresRes, competenciasRes] = await Promise.all([
+      const [evaluadosRes, evaluadoresRes, competenciasRes, evaluacionesRes] = await Promise.all([
         apiFetchEvaluados(),
-        apiFetchEvaluadores(), // ✅ Ahora usa PostgREST
-        fetchCompetencias()    // ⚠️ Todavía Firebase (migrar en Fase 3)
+        apiFetchEvaluadores(),
+        apiFetchCompetenciasConCargos(),
+        apiFetchEvaluaciones()
       ]);
 
-      // Mapear evaluados desde PostgreSQL
+      // Mapear evaluados
       setEvaluados(
         evaluadosRes.map((e) => ({
           id: String(e.id),
@@ -121,7 +119,7 @@ function Dashboard() {
         }))
       );
 
-      // Mapear evaluadores desde PostgreSQL
+      // Mapear evaluadores
       setEvaluadores(
         evaluadoresRes.map((e) => ({
           id: String(e.id),
@@ -134,13 +132,24 @@ function Dashboard() {
         }))
       );
 
-      setCompetencias(competenciasRes);
+      // Mapear competencias
+      setCompetencias(
+        competenciasRes.map((c) => ({
+          id: String(c.id),
+          clave: c.clave,
+          titulo: c.titulo,
+          descripcion: c.descripcion || "",
+          orden: c.orden,
+          activa: c.activa,
+          aplicaA: c.aplicaA || []
+        }))
+      );
 
-      // Stats calculadas desde los datos
+      // Stats
       setStats({
         totalEvaluadores: evaluadoresRes.length,
         totalEvaluados: evaluadosRes.length,
-        totalEvaluaciones: 0 // TODO: Fase 5 - contar desde evaluaciones
+        totalEvaluaciones: evaluacionesRes.length
       });
     } catch (e: any) {
       console.error(e);
@@ -155,7 +164,7 @@ function Dashboard() {
   }, []);
 
   // ==========================
-  // Handlers Evaluados (✅ Ya migrados)
+  // Handlers Evaluados
   // ==========================
 
   async function handleAgregarEvaluado(e: React.FormEvent) {
@@ -192,7 +201,7 @@ function Dashboard() {
   }
 
   // ==========================
-  // Handlers Evaluadores (✅ MIGRADOS A POSTGREST)
+  // Handlers Evaluadores
   // ==========================
 
   async function handleAgregarEvaluador(e: React.FormEvent) {
@@ -239,7 +248,6 @@ function Dashboard() {
 
   function handleCopiarLinkEvaluacion(evaluador: Evaluador) {
     const base = window.location.origin;
-    // Usar la ruta base correcta
     const basePath = import.meta.env.BASE_URL || '/';
     const url = `${base}${basePath}evaluar?evaluadorId=${encodeURIComponent(evaluador.id)}`;
 
@@ -256,7 +264,7 @@ function Dashboard() {
   }
 
   // ==========================
-  // Handlers Competencias (⚠️ Todavía Firebase - migrar Fase 3)
+  // Handlers Competencias
   // ==========================
 
   async function handleAgregarCompetencia(e: React.FormEvent) {
@@ -267,23 +275,29 @@ function Dashboard() {
     }
 
     try {
-      await createCompetencia({
+      // 1. Crear la competencia
+      const competenciaCreada = await apiCreateCompetencia({
         clave: nuevaCompetencia.clave.trim(),
         titulo: nuevaCompetencia.titulo.trim(),
         descripcion: nuevaCompetencia.descripcion.trim(),
-        aplicaA: nuevaCompetencia.aplicaA
+        orden: competencias.length
       });
+
+      // 2. Asignar los cargos seleccionados
+      await apiSetAplicaCargos(competenciaCreada.id, nuevaCompetencia.aplicaA);
+
       setNuevaCompetencia({ clave: "", titulo: "", descripcion: "", aplicaA: [] });
+      setOpenCargos(false);
       await cargarTodo();
     } catch (e: any) {
       console.error(e);
-      alert("Error agregando competencia");
+      alert("Error agregando competencia: " + e.message);
     }
   }
 
   async function handleToggleActiva(c: Competencia) {
     try {
-      await toggleCompetenciaActiva(c.id, !c.activa);
+      await apiToggleCompetenciaActiva(Number(c.id), !c.activa);
       await cargarTodo();
     } catch (e: any) {
       console.error(e);
@@ -704,7 +718,7 @@ function EvaluarPage() {
           return;
         }
 
-        // ✅ Obtener evaluador desde PostgreSQL
+        // Obtener evaluador
         const ev = await apiGetEvaluador(Number(evaluadorId));
 
         if (!ev) {
@@ -719,7 +733,7 @@ function EvaluarPage() {
           return;
         }
 
-        // ✅ Obtener el evaluado asignado
+        // Obtener el evaluado asignado
         const evaluadosRes = await apiFetchEvaluados();
         const evaluadoAsignado = evaluadosRes.find(e => e.id === ev.evaluado_id);
 
@@ -729,8 +743,8 @@ function EvaluarPage() {
           return;
         }
 
-        // ⚠️ Competencias todavía desde Firebase
-        const listaCompetencias = await fetchCompetencias();
+        // Obtener competencias
+        const listaCompetencias = await apiFetchCompetenciasConCargos();
 
         // Filtrar competencias por cargo y activas
         const cargo = ev.cargo;
@@ -759,7 +773,17 @@ function EvaluarPage() {
           activo: evaluadoAsignado.activo
         });
 
-        setCompetencias(compsFiltradas);
+        setCompetencias(
+          compsFiltradas.map((c) => ({
+            id: String(c.id),
+            clave: c.clave,
+            titulo: c.titulo,
+            descripcion: c.descripcion || "",
+            orden: c.orden,
+            activa: c.activa,
+            aplicaA: c.aplicaA || []
+          }))
+        );
       } catch (e: any) {
         console.error(e);
         setError(e?.message ?? "Error cargando formulario");
@@ -790,21 +814,24 @@ function EvaluarPage() {
     }
 
     try {
-      // ⚠️ Todavía usa Firebase - migrar en Fase 5
-      await createEvaluacion({
-        evaluadorId: evaluador.id,
-        evaluadoId: evaluado.id,
-        cargoEvaluador: evaluador.cargo,
-        respuestas,
+      // Convertir respuestas de { clave: valor } a { competencia_id: valor }
+      const respuestasArray = competencias.map((c) => ({
+        competencia_id: Number(c.id),
+        valor: respuestas[c.clave]
+      }));
+
+      await apiCrearEvaluacionCompleta({
+        evaluador_id: Number(evaluador.id),
+        evaluado_id: Number(evaluado.id),
+        cargo_evaluador: evaluador.cargo,
+        respuestas: respuestasArray,
         comentarios: comentarios.trim()
       });
 
-      // ✅ Actualizar estado en PostgreSQL
-      await apiUpdateEvaluadorEstado(Number(evaluador.id), "Completada");
       setEnviado(true);
     } catch (e: any) {
       console.error(e);
-      alert("Error guardando la evaluación.");
+      alert("Error guardando la evaluación: " + e.message);
     }
   }
 
