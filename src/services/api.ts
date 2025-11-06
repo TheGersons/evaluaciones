@@ -25,12 +25,19 @@ async function apiFetch<T>(
     throw new Error(`API Error: ${response.status} - ${error}`);
   }
 
-  // Si la respuesta es 204 No Content, devolver objeto vacío
+  // ✅ FIX: Si la respuesta es 204 No Content, devolver objeto vacío
   if (response.status === 204) {
     return {} as T;
   }
 
-  return response.json();
+  // ✅ FIX: Si no hay contenido en el body, devolver objeto vacío
+  const text = await response.text();
+  if (!text || text.trim() === '') {
+    return {} as T;
+  }
+
+  // Parsear el JSON solo si hay contenido
+  return JSON.parse(text);
 }
 
 // =====================================================
@@ -110,7 +117,7 @@ export async function apiCreateEvaluado(data: {
   puesto: string;
   area: string;
 }): Promise<EvaluadoDTO> {
-  return apiFetch<EvaluadoDTO>('/evaluados', {
+  const result = await apiFetch<EvaluadoDTO[]>('/evaluados', {
     method: 'POST',
     headers: {
       'Prefer': 'return=representation'
@@ -122,7 +129,10 @@ export async function apiCreateEvaluado(data: {
       activo: true
     }),
   });
+
+  return Array.isArray(result) ? result[0] : result;
 }
+
 
 export async function apiDeleteEvaluado(id: number): Promise<void> {
   await apiFetch(`/evaluados?id=eq.${id}`, {
@@ -159,7 +169,7 @@ export async function apiCreateEvaluador(data: {
   cargo: string;
   evaluado_id: number;
 }): Promise<EvaluadorDTO> {
-  return apiFetch<EvaluadorDTO>('/evaluadores', {
+  const result = await apiFetch<EvaluadorDTO[]>('/evaluadores', {
     method: 'POST',
     headers: {
       'Prefer': 'return=representation'
@@ -172,6 +182,8 @@ export async function apiCreateEvaluador(data: {
       estado: 'Pendiente'
     }),
   });
+
+  return Array.isArray(result) ? result[0] : result;
 }
 
 export async function apiUpdateEvaluadorEstado(
@@ -206,7 +218,7 @@ export async function apiCreateCompetencia(data: {
   tipo?: string;
   grupo?: string;
 }): Promise<CompetenciaDTO> {
-  return apiFetch<CompetenciaDTO>('/competencias', {
+  const result = await apiFetch<CompetenciaDTO[]>('/competencias', {
     method: 'POST',
     headers: {
       'Prefer': 'return=representation'
@@ -225,7 +237,12 @@ export async function apiCreateCompetencia(data: {
       etiqueta_max: 'Excelente'
     }),
   });
+
+  // PostgREST con 'Prefer: return=representation' devuelve un array
+  // Retornar el primer elemento
+  return Array.isArray(result) ? result[0] : result;
 }
+
 
 export async function apiUpdateCompetencia(
   id: number,
@@ -267,8 +284,12 @@ export async function apiSetAplicaCargos(
   cargos: string[]
 ): Promise<void> {
   // 1. Eliminar relaciones anteriores
-  await apiFetch(`/competencias_aplica_cargo?competencia_id=eq.${competenciaId}`, {
+  // ✅ FIX: No esperar respuesta JSON del DELETE
+  await fetch(`${API_BASE_URL}/competencias_aplica_cargo?competencia_id=eq.${competenciaId}`, {
     method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    }
   });
 
   // 2. Si hay cargos seleccionados, insertarlos
@@ -299,7 +320,7 @@ export async function apiCreateEvaluacionCabecera(data: {
   cargo_evaluador: string;
   comentarios?: string;
 }): Promise<EvaluacionDTO> {
-  return apiFetch<EvaluacionDTO>('/evaluaciones', {
+  const result = await apiFetch<EvaluacionDTO[]>('/evaluaciones', {
     method: 'POST',
     headers: {
       'Prefer': 'return=representation'
@@ -311,6 +332,8 @@ export async function apiCreateEvaluacionCabecera(data: {
       comentarios: data.comentarios || null
     }),
   });
+
+  return Array.isArray(result) ? result[0] : result;
 }
 
 // =====================================================

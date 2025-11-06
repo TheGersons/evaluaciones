@@ -18,6 +18,7 @@ import {
   apiCreateEvaluador,
   apiDeleteEvaluador,
   apiGetEvaluador,
+  apiUpdateEvaluadorEstado,
   apiFetchCompetenciasConCargos,
   apiCreateCompetencia,
   apiSetAplicaCargos,
@@ -276,15 +277,20 @@ function Dashboard() {
 
     try {
       // 1. Crear la competencia
-      const competenciaCreada = await apiCreateCompetencia({
+      const resultado = await apiCreateCompetencia({
         clave: nuevaCompetencia.clave.trim(),
         titulo: nuevaCompetencia.titulo.trim(),
         descripcion: nuevaCompetencia.descripcion.trim(),
         orden: competencias.length
       });
 
-      // 2. Asignar los cargos seleccionados
-      await apiSetAplicaCargos(competenciaCreada.id, nuevaCompetencia.aplicaA);
+      // PostgREST devuelve un array, tomar el primer elemento
+      const competenciaCreada = Array.isArray(resultado) ? resultado[0] : resultado;
+
+      // 2. Asignar los cargos seleccionados (solo si hay cargos)
+      if (nuevaCompetencia.aplicaA && nuevaCompetencia.aplicaA.length > 0) {
+        await apiSetAplicaCargos(competenciaCreada.id, nuevaCompetencia.aplicaA);
+      }
 
       setNuevaCompetencia({ clave: "", titulo: "", descripcion: "", aplicaA: [] });
       setOpenCargos(false);
