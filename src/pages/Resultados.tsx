@@ -19,7 +19,7 @@ import {
 import {
     apiFetchEvaluados,
     apiFetchEvaluaciones,
-    apiFetchRespuestas,
+    apiFetchRespuestasPorEvaluaciones,
     apiFetchCompetenciasConCargos
 } from '../services/api';
 import type { EvaluadoDTO, /*EvaluacionDTO,*/ RespuestaDTO } from '../services/api';
@@ -36,6 +36,7 @@ interface ResultadoEvaluado {
         competenciaId: number;
         titulo: string;
         textos: string[];
+        pregunta: string;
     }[];
 }
 
@@ -62,6 +63,9 @@ export default function Resultados() {
                 apiFetchEvaluaciones(),
                 apiFetchCompetenciasConCargos()
             ]);
+            const todasLasRespuestas = await apiFetchRespuestasPorEvaluaciones(
+                evaluaciones.map(e => e.id)
+            );
 
             setCompetencias(comps);
 
@@ -74,17 +78,17 @@ export default function Resultados() {
                 if (evals.length === 0) continue;
 
                 // Obtener todas las respuestas
-                const todasRespuestas: RespuestaDTO[] = [];
-                for (const ev of evals) {
-                    const respuestas = await apiFetchRespuestas(ev.id);
-                    todasRespuestas.push(...respuestas);
-                }
+                const evalIds = new Set(evals.map(e => e.id));
+                const respuestasDeEvaluado: RespuestaDTO[] = todasLasRespuestas.filter(
+                    r => evalIds.has(r.evaluacion_id)
+                );
+
 
                 // Respuestas abiertas agrupadas por competencia
                 const abiertasMap: Record<number, string[]> = {};
                 const compById = new Map(comps.map((c: any) => [c.id, c]));
 
-                for (const r of todasRespuestas) {
+                for (const r of respuestasDeEvaluado) {
                     const comp = compById.get(r.competencia_id);
                     if (!comp || comp.tipo !== "texto") continue;
                     if (!r.comentario || !r.comentario.trim()) continue;
@@ -99,7 +103,8 @@ export default function Resultados() {
                         return {
                             competenciaId: Number(compId),
                             titulo: comp?.titulo || "",
-                            textos
+                            textos,
+                            pregunta: comp?.descripcion || "",
                         };
                     }
                 );
@@ -111,7 +116,7 @@ export default function Resultados() {
                 comps.forEach(comp => {
                     if (comp.tipo === "texto") return; // no promediamos abiertas
 
-                    const respuestasComp = todasRespuestas.filter(r => r.competencia_id === comp.id);
+                    const respuestasComp = respuestasDeEvaluado.filter(r => r.competencia_id === comp.id);
                     if (respuestasComp.length > 0) {
                         const suma = respuestasComp.reduce((acc, r) => acc + r.valor, 0);
                         promediosPorCompetencia[comp.id] = suma / respuestasComp.length;
@@ -131,7 +136,7 @@ export default function Resultados() {
 
                 for (const cargo of cargosUnicos) {
                     const evalsDelCargo = evals.filter(e => e.cargo_evaluador === cargo);
-                    const respuestasDelCargo = todasRespuestas.filter(r =>
+                    const respuestasDelCargo = respuestasDeEvaluado.filter(r =>
                         evalsDelCargo.some(ev => ev.id === r.evaluacion_id)
                     );
 
@@ -153,7 +158,8 @@ export default function Resultados() {
                     promediosPorCompetencia,
                     promediosPorCargo,
                     comentarios,
-                    abiertasPorCompetencia
+                    abiertasPorCompetencia,
+
                 });
 
             }
@@ -504,7 +510,7 @@ export default function Resultados() {
 
                         {/* Tabla de competencias */}
                         <div style={{ background: 'white', padding: '20px', borderRadius: '14px', marginBottom: '20px' }}>
-                            <h3 style={{ marginBottom: '16px' }}>Detalle por Competencia</h3>
+                            <h3 style={{ marginBottom: '16px', color: 'black' }}>Detalle por Competencia</h3>
                             <table className="table">
                                 <thead>
                                     <tr>
@@ -556,7 +562,7 @@ export default function Resultados() {
                         {/* Comentarios */}
                         {resultadoDetalle.comentarios.length > 0 && (
                             <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
-                                <h3 style={{ marginBottom: '16px' }}>💬 Comentarios de Evaluadores</h3>
+                                <h3 style={{ marginBottom: '16px', color: 'black' }}>💬 Comentarios de Evaluadores</h3>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                     {resultadoDetalle.comentarios.map((comentario, index) => (
                                         <div key={index} style={{
@@ -574,7 +580,7 @@ export default function Resultados() {
                         {resultadoDetalle.abiertasPorCompetencia &&
                             resultadoDetalle.abiertasPorCompetencia.length > 0 && (
                                 <div style={{ background: 'white', padding: '20px', borderRadius: '14px', marginTop: '20px' }}>
-                                    <h3 style={{ marginBottom: '16px' }}>📝 Respuestas abiertas por competencia</h3>
+                                    <h3 style={{ marginBottom: '16px', color: 'black' }}>📝 Respuestas abiertas por competencia</h3>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                         {resultadoDetalle.abiertasPorCompetencia.map((item) => (
                                             <div key={item.competenciaId} style={{
@@ -583,7 +589,7 @@ export default function Resultados() {
                                                 padding: '12px 16px',
                                                 background: '#f9fafb'
                                             }}>
-                                                <h4 style={{ margin: '0 0 8px 0', color: '#111827' }}>{item.titulo}</h4>
+                                                <h4 style={{ margin: '0 0 8px 0', color: '#111827' }}>{item.pregunta}</h4>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                                     {item.textos.map((txt, idx) => (
                                                         <div key={idx} style={{

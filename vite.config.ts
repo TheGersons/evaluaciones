@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   base: '/eval360/',
   server: {
+    host: true,
     port: 5173,
     proxy: {
       '/eval360/api': {

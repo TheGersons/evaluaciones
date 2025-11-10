@@ -10,7 +10,7 @@ async function apiFetch<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  
+
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -368,6 +368,19 @@ export async function apiFetchRespuestas(
     `/respuestas?evaluacion_id=eq.${evaluacionId}`
   );
 }
+export async function apiFetchRespuestasPorEvaluaciones(
+  evaluacionIds: number[]
+): Promise<RespuestaDTO[]> {
+  if (evaluacionIds.length === 0) return [];
+
+  const uniqueIds = Array.from(new Set(evaluacionIds));
+  const ids = uniqueIds.join(',');
+
+  // PostgREST: in.(1,2,3,4)
+  return apiFetch<RespuestaDTO[]>(
+    `/respuestas?evaluacion_id=in.(${ids})`
+  );
+}
 
 export async function apiInsertRespuestas(
   evaluacionId: number,
@@ -393,12 +406,12 @@ export async function apiInsertRespuestas(
 
 export async function apiFetchConfiguracion(): Promise<Record<string, string>> {
   const result = await apiFetch<ConfiguracionDTO[]>('/configuracion');
-  
+
   const config: Record<string, string> = {};
   result.forEach(item => {
     config[item.clave] = item.valor;
   });
-  
+
   return config;
 }
 
@@ -427,7 +440,7 @@ export async function apiCrearEvaluacionCompleta(data: {
     evaluador_id: data.evaluador_id,
     evaluado_id: data.evaluado_id,
     cargo_evaluador: data.cargo_evaluador,
-    comentarios: data.comentarios 
+    comentarios: data.comentarios
   });
 
   await apiInsertRespuestas(evaluacion.id, data.respuestas);
@@ -440,20 +453,29 @@ export async function apiCrearEvaluacionCompleta(data: {
 // FUNCIONES AUXILIARES PARA COMBINAR COMPETENCIAS + CARGOS
 // =====================================================
 
-export async function apiFetchCompetenciasConCargos(): Promise<Array<CompetenciaDTO & { aplicaA: string[] }>> {
-  const competencias = await apiFetchCompetencias();
-  
-  const competenciasConCargos = await Promise.all(
-    competencias.map(async (comp) => {
-      const cargos = await apiFetchCargosDeCompetencia(comp.id);
-      return {
-        ...comp,
-        aplicaA: cargos.map(c => c.cargo)
-      };
-    })
-  );
+async function apiFetchTodasCompetenciasAplicaCargo(): Promise<CompetenciaAplicaCargoDTO[]> {
+  // Un solo request para todas las filas de competencias_aplica_cargo
+  return apiFetch<CompetenciaAplicaCargoDTO[]>(`/competencias_aplica_cargo`);
+}
 
-  return competenciasConCargos;
+export async function apiFetchCompetenciasConCargos(): Promise<Array<CompetenciaDTO & { aplicaA: string[] }>> {
+  const [competencias, relaciones] = await Promise.all([
+    apiFetchCompetencias(),
+    apiFetchTodasCompetenciasAplicaCargo(),
+  ]);
+
+  const cargosPorCompetencia = new Map<number, string[]>();
+
+  for (const rel of relaciones) {
+    const lista = cargosPorCompetencia.get(rel.competencia_id) ?? [];
+    lista.push(rel.cargo);
+    cargosPorCompetencia.set(rel.competencia_id, lista);
+  }
+
+  return competencias.map(comp => ({
+    ...comp,
+    aplicaA: cargosPorCompetencia.get(comp.id) ?? [],
+  }));
 }
 
 // =====================================================

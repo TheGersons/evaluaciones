@@ -11,8 +11,12 @@ import type {
   DashboardStats
 } from "./types";
 
-// ✅ SERVICIOS POSTGREST (ya migrados)
 import {
+  apiFetchCompetenciasConCargos,
+  apiCreateCompetencia,
+  apiSetAplicaCargos,
+  apiToggleCompetenciaActiva,
+  apiCrearEvaluacionCompleta,
   apiFetchEvaluados,
   apiCreateEvaluado,
   apiDeleteEvaluado,
@@ -25,15 +29,6 @@ import {
   apiImportEvaluadoresBatch,
   type BulkEvaluadorInput
 } from "./services/api";
-
-import {
-  apiFetchCompetenciasConCargos,
-  apiCreateCompetencia,
-  apiSetAplicaCargos,
-  apiToggleCompetenciaActiva,
-  apiCrearEvaluacionCompleta,
-} from "./services/api";
-
 
 const BASE_PATH = import.meta.env.BASE_URL || "/";
 
@@ -79,14 +74,13 @@ function touchSession() {
   );
 }
 
+//funcion comentada para usar en un futuro con unn boton de cerrar sesion
+
 /*function clearSession() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(SESSION_KEY);
 }
   */
-
-
-
 
 // =====================================================
 // Utilidad: decidir qué vista mostrar según la URL
