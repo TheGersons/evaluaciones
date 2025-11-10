@@ -22,8 +22,8 @@ import {
     apiFetchRespuestasPorEvaluaciones,
     apiFetchCompetenciasConCargos
 } from '../services/api';
-import type { EvaluadoDTO, /*EvaluacionDTO,*/ RespuestaDTO } from '../services/api';
 import { navigate } from '../App';
+import type { EvaluadoDTO, RespuestaDTO } from '../types';
 
 interface ResultadoEvaluado {
     evaluado: EvaluadoDTO;

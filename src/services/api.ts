@@ -1,4 +1,17 @@
 // src/services/api.ts
+import type {
+  EvaluadoDTO,
+  EvaluadorDTO,
+  CompetenciaDTO,
+  CompetenciaAplicaCargoDTO,
+  EvaluacionDTO,
+  RespuestaDTO,
+  CicloEvaluacionDTO,
+  CicloCompetenciaDTO,
+  BulkEvaluadorInput,
+  CicloStats
+} from '../types';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/eval360/api';
 
 // =====================================================
@@ -25,94 +38,142 @@ async function apiFetch<T>(
     throw new Error(`API Error: ${response.status} - ${error}`);
   }
 
-  // ✅ FIX: Si la respuesta es 204 No Content, devolver objeto vacío
   if (response.status === 204) {
     return {} as T;
   }
 
-  // ✅ FIX: Si no hay contenido en el body, devolver objeto vacío
   const text = await response.text();
   if (!text || text.trim() === '') {
     return {} as T;
   }
 
-  // Parsear el JSON solo si hay contenido
   return JSON.parse(text);
 }
 
 // =====================================================
-// TIPOS (DTOs desde PostgreSQL)
+// CICLOS DE EVALUACIÓN
 // =====================================================
 
-export interface EvaluadoDTO {
-  id: number;
-  nombre: string;
-  puesto: string;
-  area: string;
-  fecha_registro: string;
-  activo: boolean;
+export async function apiFetchCiclos(): Promise<CicloEvaluacionDTO[]> {
+  return apiFetch<CicloEvaluacionDTO[]>('/ciclos_evaluacion?order=fecha_creacion.desc');
 }
 
-export interface EvaluadorDTO {
-  id: number;
-  nombre: string;
-  email: string;
-  cargo: string;
-  token?: string;
-  evaluado_id: number;
-  fecha_registro: string;
-  estado: 'Pendiente' | 'Completada';
+export async function apiFetchCiclosActivos(): Promise<CicloEvaluacionDTO[]> {
+  return apiFetch<CicloEvaluacionDTO[]>('/ciclos_evaluacion?estado=in.(activa,pausada)&order=fecha_creacion.desc');
 }
 
-export interface CompetenciaDTO {
-  id: number;
-  clave: string;
-  titulo: string;
+export async function apiGetCiclo(id: number): Promise<CicloEvaluacionDTO | null> {
+  const result = await apiFetch<CicloEvaluacionDTO[]>(`/ciclos_evaluacion?id=eq.${id}`);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function apiCreateCiclo(data: {
+  nombre: string;
   descripcion?: string;
-  orden: number;
-  activa: boolean;
-  tipo?: string;
-  grupo?: string;
-  escala_min?: number;
-  escala_max?: number;
-  etiqueta_min?: string;
-  etiqueta_max?: string;
+  fecha_inicio: string;
+  fecha_fin?: string;
+  estado?: 'activa' | 'pausada' | 'finalizada' | 'borrador';
+}): Promise<CicloEvaluacionDTO> {
+  const result = await apiFetch<CicloEvaluacionDTO[]>('/ciclos_evaluacion', {
+    method: 'POST',
+    headers: {
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify({
+      nombre: data.nombre,
+      descripcion: data.descripcion || '',
+      fecha_inicio: data.fecha_inicio,
+      fecha_fin: data.fecha_fin || null,
+      estado: data.estado || 'borrador'
+    }),
+  });
+
+  return Array.isArray(result) ? result[0] : result;
 }
 
-export interface CompetenciaAplicaCargoDTO {
-  competencia_id: number;
-  cargo: string;
+export async function apiUpdateCiclo(
+  id: number,
+  data: Partial<CicloEvaluacionDTO>
+): Promise<void> {
+  await apiFetch(`/ciclos_evaluacion?id=eq.${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
 }
 
-export interface EvaluacionDTO {
-  id: number;
-  evaluador_id: number;
-  evaluado_id: number;
-  cargo_evaluador: string;
-  comentarios?: string;
-  fecha_completada: string;
+export async function apiDeleteCiclo(id: number): Promise<void> {
+  await apiFetch(`/ciclos_evaluacion?id=eq.${id}`, {
+    method: 'DELETE',
+  });
 }
 
-export interface RespuestaDTO {
-  evaluacion_id: number;
-  competencia_id: number;
-  valor: number;      // para tipo 'likert'; en abiertas puedes usar 0 o ignorarlo
-  comentario: string; // texto libre, '' cuando no aplica
+export async function apiClonarCiclo(
+  cicloOrigenId: number,
+  nuevoNombre: string,
+  descripcion?: string,
+  clonarEvaluadores: boolean = false
+): Promise<number> {
+  const result = await apiFetch<{ id: number }[]>('/rpc/clonar_ciclo', {
+    method: 'POST',
+    body: JSON.stringify({
+      p_ciclo_origen_id: cicloOrigenId,
+      p_nuevo_nombre: nuevoNombre,
+      p_descripcion: descripcion,
+      p_clonar_evaluadores: clonarEvaluadores
+    }),
+  });
+
+  return Array.isArray(result) ? result[0].id : (result as any);
 }
 
+// =====================================================
+// CICLOS - COMPETENCIAS (N:M)
+// =====================================================
 
-export interface ConfiguracionDTO {
-  clave: string;
-  valor: string;
+export async function apiFetchCompetenciasDeCiclo(
+  cicloId: number
+): Promise<CicloCompetenciaDTO[]> {
+  return apiFetch<CicloCompetenciaDTO[]>(
+    `/ciclos_competencias?ciclo_id=eq.${cicloId}`
+  );
 }
 
-export interface BulkEvaluadorInput {
-  nombre: string;
-  email: string;
-  evaluado_nombre: string;
-  cargo: string;
+export async function apiAgregarCompetenciasACiclo(
+  cicloId: number,
+  competenciaIds: number[]
+): Promise<void> {
+  await apiFetch('/rpc/agregar_competencias_a_ciclo', {
+    method: 'POST',
+    body: JSON.stringify({
+      p_ciclo_id: cicloId,
+      p_competencia_ids: competenciaIds
+    }),
+  });
 }
 
+export async function apiToggleCompetenciaEnCiclo(
+  cicloId: number,
+  competenciaId: number,
+  activa: boolean
+): Promise<void> {
+  await apiFetch(`/ciclos_competencias?ciclo_id=eq.${cicloId}&competencia_id=eq.${competenciaId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ activa }),
+  });
+}
+
+// =====================================================
+// STATS POR CICLO
+// =====================================================
+
+export async function apiFetchStatsPorCiclo(): Promise<CicloStats[]> {
+  return apiFetch<CicloStats[]>('/vista_stats_por_ciclo');
+}
+
+export async function apiFetchStatsCiclo(cicloId: number): Promise<CicloStats | null> {
+  const result = await apiFetch<CicloStats[]>(`/vista_stats_por_ciclo?ciclo_id=eq.${cicloId}`);
+  return result.length > 0 ? result[0] : null;
+}
 
 // =====================================================
 // EVALUADOS
@@ -143,7 +204,6 @@ export async function apiCreateEvaluado(data: {
   return Array.isArray(result) ? result[0] : result;
 }
 
-
 export async function apiDeleteEvaluado(id: number): Promise<void> {
   await apiFetch(`/evaluados?id=eq.${id}`, {
     method: 'DELETE',
@@ -164,8 +224,11 @@ export async function apiUpdateEvaluado(
 // EVALUADORES
 // =====================================================
 
-export async function apiFetchEvaluadores(): Promise<EvaluadorDTO[]> {
-  return apiFetch<EvaluadorDTO[]>('/evaluadores?order=id.asc');
+export async function apiFetchEvaluadores(cicloId?: number): Promise<EvaluadorDTO[]> {
+  const query = cicloId 
+    ? `/evaluadores?ciclo_id=eq.${cicloId}&order=id.asc`
+    : '/evaluadores?order=id.asc';
+  return apiFetch<EvaluadorDTO[]>(query);
 }
 
 export async function apiGetEvaluador(id: number): Promise<EvaluadorDTO | null> {
@@ -178,6 +241,7 @@ export async function apiCreateEvaluador(data: {
   email: string;
   cargo: string;
   evaluado_id: number;
+  ciclo_id: number;
 }): Promise<EvaluadorDTO> {
   const result = await apiFetch<EvaluadorDTO[]>('/evaluadores', {
     method: 'POST',
@@ -189,6 +253,7 @@ export async function apiCreateEvaluador(data: {
       email: data.email,
       cargo: data.cargo,
       evaluado_id: data.evaluado_id,
+      ciclo_id: data.ciclo_id,
       estado: 'Pendiente'
     }),
   });
@@ -220,7 +285,6 @@ export async function apiImportEvaluadoresBatch(
     body: JSON.stringify({ p_items: items })
   });
 }
-
 
 // =====================================================
 // COMPETENCIAS
@@ -258,11 +322,8 @@ export async function apiCreateCompetencia(data: {
     }),
   });
 
-  // PostgREST con 'Prefer: return=representation' devuelve un array
-  // Retornar el primer elemento
   return Array.isArray(result) ? result[0] : result;
 }
-
 
 export async function apiUpdateCompetencia(
   id: number,
@@ -288,7 +349,7 @@ export async function apiDeleteCompetencia(id: number): Promise<void> {
 }
 
 // =====================================================
-// COMPETENCIAS_APLICA_CARGO (relación N-M)
+// COMPETENCIAS_APLICA_CARGO
 // =====================================================
 
 export async function apiFetchCargosDeCompetencia(
@@ -303,8 +364,6 @@ export async function apiSetAplicaCargos(
   competenciaId: number,
   cargos: string[]
 ): Promise<void> {
-  // 1. Eliminar relaciones anteriores
-  // ✅ FIX: No esperar respuesta JSON del DELETE
   await fetch(`${API_BASE_URL}/competencias_aplica_cargo?competencia_id=eq.${competenciaId}`, {
     method: 'DELETE',
     headers: {
@@ -312,7 +371,6 @@ export async function apiSetAplicaCargos(
     }
   });
 
-  // 2. Si hay cargos seleccionados, insertarlos
   if (cargos.length > 0) {
     const filas = cargos.map(cargo => ({
       competencia_id: competenciaId,
@@ -327,17 +385,21 @@ export async function apiSetAplicaCargos(
 }
 
 // =====================================================
-// EVALUACIONES (cabecera)
+// EVALUACIONES
 // =====================================================
 
-export async function apiFetchEvaluaciones(): Promise<EvaluacionDTO[]> {
-  return apiFetch<EvaluacionDTO[]>('/evaluaciones?order=id.desc');
+export async function apiFetchEvaluaciones(cicloId?: number): Promise<EvaluacionDTO[]> {
+  const query = cicloId
+    ? `/evaluaciones?ciclo_id=eq.${cicloId}&order=id.desc`
+    : '/evaluaciones?order=id.desc';
+  return apiFetch<EvaluacionDTO[]>(query);
 }
 
 export async function apiCreateEvaluacionCabecera(data: {
   evaluador_id: number;
   evaluado_id: number;
   cargo_evaluador: string;
+  ciclo_id: number;
   comentarios?: string;
 }): Promise<EvaluacionDTO> {
   const result = await apiFetch<EvaluacionDTO[]>('/evaluaciones', {
@@ -349,16 +411,16 @@ export async function apiCreateEvaluacionCabecera(data: {
       evaluador_id: data.evaluador_id,
       evaluado_id: data.evaluado_id,
       cargo_evaluador: data.cargo_evaluador,
-      comentarios: data.comentarios ?? ''  // nunca null
+      ciclo_id: data.ciclo_id,
+      comentarios: data.comentarios ?? ''
     }),
   });
 
   return Array.isArray(result) ? result[0] : result;
 }
 
-
 // =====================================================
-// RESPUESTAS (detalle de evaluaciones)
+// RESPUESTAS
 // =====================================================
 
 export async function apiFetchRespuestas(
@@ -368,6 +430,7 @@ export async function apiFetchRespuestas(
     `/respuestas?evaluacion_id=eq.${evaluacionId}`
   );
 }
+
 export async function apiFetchRespuestasPorEvaluaciones(
   evaluacionIds: number[]
 ): Promise<RespuestaDTO[]> {
@@ -376,7 +439,6 @@ export async function apiFetchRespuestasPorEvaluaciones(
   const uniqueIds = Array.from(new Set(evaluacionIds));
   const ids = uniqueIds.join(',');
 
-  // PostgREST: in.(1,2,3,4)
   return apiFetch<RespuestaDTO[]>(
     `/respuestas?evaluacion_id=in.(${ids})`
   );
@@ -390,38 +452,12 @@ export async function apiInsertRespuestas(
     evaluacion_id: evaluacionId,
     competencia_id: r.competencia_id,
     valor: r.valor,
-    comentario: r.comentario ?? ''  // likert: '', abiertas: texto
+    comentario: r.comentario ?? ''
   }));
 
   await apiFetch('/respuestas', {
     method: 'POST',
     body: JSON.stringify(filas),
-  });
-}
-
-
-// =====================================================
-// CONFIGURACIÓN
-// =====================================================
-
-export async function apiFetchConfiguracion(): Promise<Record<string, string>> {
-  const result = await apiFetch<ConfiguracionDTO[]>('/configuracion');
-
-  const config: Record<string, string> = {};
-  result.forEach(item => {
-    config[item.clave] = item.valor;
-  });
-
-  return config;
-}
-
-export async function apiUpdateConfiguracion(
-  clave: string,
-  valor: string
-): Promise<void> {
-  await apiFetch(`/configuracion?clave=eq.${clave}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ valor }),
   });
 }
 
@@ -433,28 +469,27 @@ export async function apiCrearEvaluacionCompleta(data: {
   evaluador_id: number;
   evaluado_id: number;
   cargo_evaluador: string;
+  ciclo_id: number;
   respuestas: Array<{ competencia_id: number; valor: number; comentario?: string }>;
-  comentarios?: string; // comentario global de la evaluación
+  comentarios?: string;
 }): Promise<void> {
   const evaluacion = await apiCreateEvaluacionCabecera({
     evaluador_id: data.evaluador_id,
     evaluado_id: data.evaluado_id,
     cargo_evaluador: data.cargo_evaluador,
+    ciclo_id: data.ciclo_id,
     comentarios: data.comentarios
   });
 
   await apiInsertRespuestas(evaluacion.id, data.respuestas);
-
   await apiUpdateEvaluadorEstado(data.evaluador_id, 'Completada');
 }
 
-
 // =====================================================
-// FUNCIONES AUXILIARES PARA COMBINAR COMPETENCIAS + CARGOS
+// AUXILIAR: COMPETENCIAS CON CARGOS
 // =====================================================
 
 async function apiFetchTodasCompetenciasAplicaCargo(): Promise<CompetenciaAplicaCargoDTO[]> {
-  // Un solo request para todas las filas de competencias_aplica_cargo
   return apiFetch<CompetenciaAplicaCargoDTO[]>(`/competencias_aplica_cargo`);
 }
 
@@ -479,7 +514,7 @@ export async function apiFetchCompetenciasConCargos(): Promise<Array<Competencia
 }
 
 // =====================================================
-// STATS DEL DASHBOARD
+// STATS DEL DASHBOARD (Legacy - mantener compatibilidad)
 // =====================================================
 
 export async function apiFetchDashboardStats(): Promise<{

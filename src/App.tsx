@@ -1,14 +1,13 @@
 // src/App.tsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import "./App.css";
-
-import * as XLSX from "xlsx"
 
 import type {
   Evaluado,
   Evaluador,
   Competencia,
-  DashboardStats
+  DashboardStats,
+  BulkEvaluadorInput
 } from "./types";
 
 import {
@@ -24,11 +23,17 @@ import {
   apiCreateEvaluador,
   apiDeleteEvaluador,
   apiGetEvaluador,
-  apiUpdateEvaluadorEstado,
   apiFetchDashboardStats,
   apiImportEvaluadoresBatch,
-  type BulkEvaluadorInput
+  apiFetchCiclosActivos,
+  apiGetCiclo
 } from "./services/api";
+import { DataTable } from "./components/common/DataTable";
+import { DashboardStatsCards } from "./components/dashboard/DashboardStats";
+import { FormEvaluador } from "./components/dashboard/FormEvaluadores";
+import { FormEvaluado } from "./components/dashboard/FormEvaluados";
+import { FormCompetencia } from "./pages/Dashboard";
+
 
 const BASE_PATH = import.meta.env.BASE_URL || "/";
 
@@ -36,6 +41,10 @@ export function navigate(path: string) {
   const clean = path.startsWith("/") ? path.slice(1) : path;
   window.location.href = `${BASE_PATH}${clean}`;
 }
+
+// =====================================================
+// GESTIÓN DE SESIÓN
+// =====================================================
 
 const SESSION_KEY = "eval360_admin_session";
 const SESSION_TTL_MS = 15 * 60 * 1000; // 15 minutos
@@ -74,24 +83,32 @@ function touchSession() {
   );
 }
 
-//funcion comentada para usar en un futuro con unn boton de cerrar sesion
+// =====================================================
+// GESTIÓN DE CICLO ACTIVO
+// =====================================================
 
-/*function clearSession() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(SESSION_KEY);
+const CICLO_KEY = "ciclo_activo_id";
+
+function getCicloActivo(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(CICLO_KEY);
 }
-  */
+
+function setCicloActivo(cicloId: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CICLO_KEY, cicloId);
+}
 
 // =====================================================
-// Utilidad: decidir qué vista mostrar según la URL
+// COMPONENTE PRINCIPAL
 // =====================================================
+
 function App() {
   const basePath = import.meta.env.BASE_URL || "/";
   let path = window.location.pathname;
 
-  // Normalizar: quitar el prefijo base (/eval360/)
   if (path.startsWith(basePath)) {
-    path = path.slice(basePath.length - 1); // deja el primer "/" para comparaciones
+    path = path.slice(basePath.length - 1);
   }
 
   useEffect(() => {
@@ -108,11 +125,12 @@ function App() {
     };
   }, []);
 
+  // Ruta pública - sin protección
   if (path.startsWith("/evaluar")) {
-    // El formulario de evaluación NO requiere PIN
     return <EvaluarPage />;
   }
 
+  // Rutas protegidas
   if (path === "/resultados" || path.startsWith("/resultados")) {
     const Resultados = React.lazy(() => import("./pages/Resultados"));
     return (
@@ -134,7 +152,28 @@ function App() {
     );
   }
 
-  // Dashboard por defecto, protegido
+  if (path === "/ciclos" || path.startsWith("/ciclos")) {
+    const GestionCiclos = React.lazy(() => import("./pages/GestionCiclos"));
+    return (
+      <AdminGate>
+        <React.Suspense
+          fallback={
+            <div className="root">
+              <div className="app">
+                <div className="panel">
+                  <p>Cargando gestión de ciclos...</p>
+                </div>
+              </div>
+            </div>
+          }
+        >
+          <GestionCiclos />
+        </React.Suspense>
+      </AdminGate>
+    );
+  }
+
+  // Dashboard por defecto
   return (
     <AdminGate>
       <Dashboard />
@@ -142,231 +181,11 @@ function App() {
   );
 }
 
-
 export default App;
 
 // =====================================================
-// DASHBOARD (admin)
+// ADMIN GATE - Protección con PIN
 // =====================================================
-
-type SortDirection = "asc" | "desc";
-
-interface DataTableColumn<T> {
-  header: string;
-  render: (row: T) => React.ReactNode;
-  getSortValue?: (row: T) => string | number;
-}
-
-interface DataTableProps<T> {
-  rows: T[];
-  columns: DataTableColumn<T>[];
-  searchPlaceholder?: string;
-  getSearchText?: (row: T) => string;
-  initialPageSize?: number;
-}
-
-function DataTable<T>({
-  rows,
-  columns,
-  searchPlaceholder = "Buscar...",
-  getSearchText,
-  initialPageSize = 10
-}: DataTableProps<T>) {
-  const [search, setSearch] = useState("");
-  const [pageSize, setPageSize] = useState(initialPageSize);
-  const [page, setPage] = useState(1);
-  const [sortIndex, setSortIndex] = useState<number | null>(null);
-  const [sortDir, setSortDir] = useState<SortDirection>("asc");
-
-  // Filtro por texto
-  const filtered = rows.filter((row) => {
-    if (!search.trim() || !getSearchText) return true;
-    const haystack = getSearchText(row).toLowerCase();
-    return haystack.includes(search.toLowerCase());
-  });
-
-  // Orden
-  let sorted = filtered;
-  if (sortIndex !== null) {
-    const col = columns[sortIndex];
-    if (col.getSortValue) {
-      sorted = [...filtered].sort((a, b) => {
-        const va = col.getSortValue!(a);
-        const vb = col.getSortValue!(b);
-        if (va < vb) return sortDir === "asc" ? -1 : 1;
-        if (va > vb) return sortDir === "asc" ? 1 : -1;
-        return 0;
-      });
-    }
-  }
-
-  // Paginación
-  const total = sorted.length;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const start = (currentPage - 1) * pageSize;
-  const end = start + pageSize;
-  const pageRows = sorted.slice(start, end);
-
-  function handleHeaderClick(index: number) {
-    const col = columns[index];
-    if (!col.getSortValue) return;
-    if (sortIndex === index) {
-      setSortDir(sortDir === "asc" ? "desc" : "asc");
-    } else {
-      setSortIndex(index);
-      setSortDir("asc");
-    }
-  }
-
-  function handlePageChange(next: number) {
-    if (next < 1 || next > totalPages) return;
-    setPage(next);
-  }
-
-  function handlePageSizeChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const size = parseInt(e.target.value, 10);
-    setPageSize(size);
-    setPage(1);
-  }
-
-  return (
-    <div style={{ marginTop: "12px" }}>
-      <div style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: "8px",
-        gap: "8px",
-        flexWrap: "wrap"
-      }}>
-        <input
-          type="text"
-          placeholder={searchPlaceholder}
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          style={{
-            flex: "1",
-            minWidth: "200px",
-            padding: "6px 10px",
-            borderRadius: "8px",
-            border: "1px solid #d1d5db",
-            fontSize: "14px",
-            background: "#ffffff",   // fondo blanco
-            color: "#111827"         // texto negro
-          }}
-        />
-
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "13px", color: "#6b7280" }}>Filas por página</span>
-          <select
-            value={pageSize}
-            onChange={handlePageSizeChange}
-            style={{
-              padding: "4px 8px",
-              borderRadius: "8px",
-              border: "1px solid #d1d5db",
-              fontSize: "13px"
-            }}
-          >
-            <option value={5}>5</option>
-            <option value={10}>10</option>
-            <option value={25}>25</option>
-          </select>
-        </div>
-      </div>
-
-      <table className="table">
-        <thead>
-          <tr>
-            {columns.map((col, idx) => (
-              <th
-                key={idx}
-                onClick={() => handleHeaderClick(idx)}
-                style={col.getSortValue ? { cursor: "pointer" } : {}}
-              >
-                {col.header}
-                {sortIndex === idx && (
-                  <span style={{ marginLeft: "4px", fontSize: "10px" }}>
-                    {sortDir === "asc" ? "▲" : "▼"}
-                  </span>
-                )}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {pageRows.length === 0 ? (
-            <tr>
-              <td colSpan={columns.length} style={{ textAlign: "center" }}>
-                Sin registros
-              </td>
-            </tr>
-          ) : (
-            pageRows.map((row, idx) => (
-              <tr key={idx}>
-                {columns.map((col, cIdx) => (
-                  <td key={cIdx}>{col.render(row)}</td>
-                ))}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-
-      <div style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginTop: "8px",
-        fontSize: "13px",
-        color: "#6b7280",
-        flexWrap: "wrap",
-        gap: "8px"
-      }}>
-        <div>
-          Mostrando {total === 0 ? 0 : start + 1}–{Math.min(end, total)} de {total}
-        </div>
-        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-          <button
-            type="button"
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage === 1}
-            style={{
-              padding: "4px 8px",
-              borderRadius: "6px",
-              border: "none",
-              background: currentPage === 1 ? "#e5e7eb" : "#4b5563",
-              color: currentPage === 1 ? "#9ca3af" : "#ffffff",
-              cursor: currentPage === 1 ? "not-allowed" : "pointer",
-              fontSize: "13px"
-            }}
-          >
-            « Anterior
-          </button>
-          <span>Página {currentPage} de {totalPages}</span>
-          <button
-            type="button"
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages}
-            style={{
-              padding: "4px 8px",
-              borderRadius: "6px",
-              border: "none",
-              background: currentPage === totalPages ? "#e5e7eb" : "#4b5563",
-              color: currentPage === totalPages ? "#9ca3af" : "#ffffff",
-              cursor: currentPage === totalPages ? "not-allowed" : "pointer",
-              fontSize: "13px"
-            }}
-          >
-            Siguiente »
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 
 function AdminGate({ children }: { children: React.ReactNode }) {
   const [pin, setPin] = useState("");
@@ -444,17 +263,11 @@ function AdminGate({ children }: { children: React.ReactNode }) {
   );
 }
 
-
+// =====================================================
+// DASHBOARD
+// =====================================================
 
 function Dashboard() {
-  const CARGOS = [
-    "Jefe inmediato",
-    "Compañero",
-    "Sub-alterno",
-    "Cliente",
-    "Autoevaluacion"
-  ];
-
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [evaluados, setEvaluados] = useState<Evaluado[]>([]);
   const [evaluadores, setEvaluadores] = useState<Evaluador[]>([]);
@@ -462,28 +275,11 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [nuevoEvaluado, setNuevoEvaluado] = useState({
-    nombre: "",
-    puesto: "",
-    area: ""
-  });
+  const [cicloActualId, setCicloActualId] = useState<string | null>(null);
+  const [cicloActualNombre, setCicloActualNombre] = useState<string>("");
 
-  const [nuevoEvaluador, setNuevoEvaluador] = useState({
-    nombre: "",
-    email: "",
-    cargo: "",
-    evaluadoId: ""
-  });
-
-  const [nuevaCompetencia, setNuevaCompetencia] = useState({
-    clave: "",
-    titulo: "",
-    descripcion: "",
-    aplicaA: [] as string[],
-    tipo: "likert"
-  });
-
-  const [openCargos, setOpenCargos] = useState(false);
+  const [mostrarModalLink, setMostrarModalLink] = useState(false);
+  const [linkCopiar, setLinkCopiar] = useState("");
 
   const evaluadoresPendientes = evaluadores.filter(
     (e) => e.estado !== "Completada"
@@ -491,74 +287,45 @@ function Dashboard() {
 
   const competenciasActivas = competencias.filter((c) => c.activa).length;
 
-  const tasaCompletado =
-    stats && stats.totalEvaluadores > 0
-      ? Math.round(
-        (stats.totalEvaluaciones / stats.totalEvaluadores) * 100
-      )
-      : 0;
-  const [mostrarModalLink, setMostrarModalLink] = useState(false);
-  const [linkCopiar, setLinkCopiar] = useState("");
+  // Cargar ciclo activo y datos
+  useEffect(() => {
+    cargarCicloYDatos();
+  }, []);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [importando, setImportando] = useState(false);
-
-
-  // ✅ MIGRADO A POSTGREST
-  async function cargarTodo() {
+  async function cargarCicloYDatos() {
     try {
       setLoading(true);
       setError(null);
 
-      const [evaluadosRes, evaluadoresRes, competenciasRes, statsRes] = await Promise.all([
-        apiFetchEvaluados(),
-        apiFetchEvaluadores(), // ✅ Ahora usa PostgREST
-        apiFetchCompetenciasConCargos(),
-        apiFetchDashboardStats()
-      ]);
+      // Verificar si hay un ciclo guardado
+      let cicloId = getCicloActivo();
 
-      // Mapear evaluados desde PostgreSQL
-      setEvaluados(
-        evaluadosRes.map((e) => ({
-          id: String(e.id),
-          nombre: e.nombre,
-          puesto: e.puesto,
-          area: e.area,
-          fechaRegistro: e.fecha_registro,
-          activo: e.activo
-        }))
-      );
+      // Si no hay ciclo guardado, buscar el primer ciclo activo
+      if (!cicloId) {
+        const ciclosActivos = await apiFetchCiclosActivos();
+        if (ciclosActivos.length > 0) {
+          cicloId = String(ciclosActivos[0].id);
+          setCicloActivo(cicloId);
+        } else {
+          setError("No hay ciclos de evaluación activos. Crea uno en 'Gestión de Evaluaciones'.");
+          setLoading(false);
+          return;
+        }
+      }
 
-      // Mapear evaluadores desde PostgreSQL
-      setEvaluadores(
-        evaluadoresRes.map((e) => ({
-          id: String(e.id),
-          nombre: e.nombre,
-          email: e.email,
-          cargo: e.cargo,
-          evaluadoId: String(e.evaluado_id),
-          fechaRegistro: e.fecha_registro,
-          estado: e.estado
-        }))
-      );
+      // Cargar info del ciclo
+      const ciclo = await apiGetCiclo(Number(cicloId));
+      if (!ciclo) {
+        setError("El ciclo seleccionado no existe.");
+        setLoading(false);
+        return;
+      }
 
-      setCompetencias(
-        competenciasRes.map((c) => ({
-          id: String(c.id),
-          clave: c.clave,
-          titulo: c.titulo,
-          descripcion: c.descripcion || "",
-          orden: c.orden,
-          activa: c.activa,
-          aplicaA: c.aplicaA || [],
-          tipo: c.tipo || "likert"
-        }))
-      );
+      setCicloActualId(cicloId);
+      setCicloActualNombre(ciclo.nombre);
 
-
-
-      // Stats calculadas desde los datos
-      setStats(statsRes);
+      // Cargar datos del ciclo
+      await cargarDatosCiclo(Number(cicloId));
     } catch (e: any) {
       console.error(e);
       setError(e?.message ?? "Error cargando datos");
@@ -567,30 +334,59 @@ function Dashboard() {
     }
   }
 
-  useEffect(() => {
-    cargarTodo();
-  }, []);
+  async function cargarDatosCiclo(cicloId: number) {
+    const [evaluadosRes, evaluadoresRes, competenciasRes, statsRes] = await Promise.all([
+      apiFetchEvaluados(),
+      apiFetchEvaluadores(cicloId), // Filtrado por ciclo
+      apiFetchCompetenciasConCargos(),
+      apiFetchDashboardStats()
+    ]);
 
-  // ==========================
-  // Handlers Evaluados (✅ Ya migrados)
-  // ==========================
+    setEvaluados(
+      evaluadosRes.map((e) => ({
+        id: String(e.id),
+        nombre: e.nombre,
+        puesto: e.puesto,
+        area: e.area,
+        fechaRegistro: e.fecha_registro,
+        activo: e.activo
+      }))
+    );
 
-  async function handleAgregarEvaluado(e: React.FormEvent) {
-    e.preventDefault();
-    if (!nuevoEvaluado.nombre.trim()) {
-      alert("El nombre es obligatorio");
-      return;
-    }
+    setEvaluadores(
+      evaluadoresRes.map((e) => ({
+        id: String(e.id),
+        nombre: e.nombre,
+        email: e.email,
+        cargo: e.cargo,
+        evaluadoId: String(e.evaluado_id),
+        fechaRegistro: e.fecha_registro,
+        estado: e.estado,
+        cicloId: String(e.ciclo_id)
+      }))
+    );
 
+    setCompetencias(
+      competenciasRes.map((c) => ({
+        id: String(c.id),
+        clave: c.clave,
+        titulo: c.titulo,
+        descripcion: c.descripcion || "",
+        orden: c.orden,
+        activa: c.activa,
+        aplicaA: c.aplicaA || [],
+        tipo: c.tipo || "likert"
+      }))
+    );
+
+    setStats(statsRes);
+  }
+
+  // Handlers Evaluados
+  async function handleAgregarEvaluado(data: { nombre: string; puesto: string; area: string }) {
     try {
-      await apiCreateEvaluado({
-        nombre: nuevoEvaluado.nombre.trim(),
-        puesto: nuevoEvaluado.puesto.trim(),
-        area: nuevoEvaluado.area.trim()
-      });
-
-      setNuevoEvaluado({ nombre: "", puesto: "", area: "" });
-      await cargarTodo();
+      await apiCreateEvaluado(data);
+      await cargarDatosCiclo(Number(cicloActualId));
     } catch (e: any) {
       console.error(e);
       alert("Error agregando evaluado");
@@ -601,42 +397,30 @@ function Dashboard() {
     if (!confirm("¿Eliminar esta persona a evaluar?")) return;
     try {
       await apiDeleteEvaluado(Number(id));
-      await cargarTodo();
+      await cargarDatosCiclo(Number(cicloActualId));
     } catch (e: any) {
       console.error(e);
       alert("Error eliminando evaluado");
     }
   }
 
-  // ==========================
-  // Handlers Evaluadores (✅ MIGRADOS A POSTGREST)
-  // ==========================
-
-  async function handleAgregarEvaluador(e: React.FormEvent) {
-    e.preventDefault();
-    if (!nuevoEvaluador.nombre.trim() || !nuevoEvaluador.email.trim()) {
-      alert("Nombre y correo son obligatorios");
-      return;
-    }
-    if (!nuevoEvaluador.cargo.trim()) {
-      alert("Selecciona un cargo");
-      return;
-    }
-    if (!nuevoEvaluador.evaluadoId) {
-      alert("Selecciona a quién evaluará esta persona");
-      return;
-    }
-
+  // Handlers Evaluadores
+  async function handleAgregarEvaluador(data: {
+    nombre: string;
+    email: string;
+    cargo: string;
+    evaluadoId: string;
+    cicloId: number;
+  }) {
     try {
       await apiCreateEvaluador({
-        nombre: nuevoEvaluador.nombre.trim(),
-        email: nuevoEvaluador.email.trim(),
-        cargo: nuevoEvaluador.cargo,
-        evaluado_id: Number(nuevoEvaluador.evaluadoId)
+        nombre: data.nombre,
+        email: data.email,
+        cargo: data.cargo,
+        evaluado_id: Number(data.evaluadoId),
+        ciclo_id: data.cicloId
       });
-
-      setNuevoEvaluador({ nombre: "", email: "", cargo: "", evaluadoId: "" });
-      await cargarTodo();
+      await cargarDatosCiclo(Number(cicloActualId));
     } catch (e: any) {
       console.error(e);
       alert("Error agregando evaluador");
@@ -647,32 +431,89 @@ function Dashboard() {
     if (!confirm("¿Eliminar este evaluador?")) return;
     try {
       await apiDeleteEvaluador(Number(id));
-      await cargarTodo();
+      await cargarDatosCiclo(Number(cicloActualId));
     } catch (e: any) {
       console.error(e);
       alert("Error eliminando evaluador");
     }
   }
 
+  async function handleImportarEvaluadores(items: BulkEvaluadorInput[]) {
+    try {
+      await apiImportEvaluadoresBatch(items);
+      await cargarDatosCiclo(Number(cicloActualId));
+    } catch (e: any) {
+      console.error(e);
+      throw e;
+    }
+  }
+
+  function handleCopiarLinkEvaluacion(evaluador: Evaluador) {
+    const url = `${window.location.origin}${BASE_PATH}evaluar?evaluadorId=${evaluador.id}`;
+    setLinkCopiar(url);
+    setMostrarModalLink(true);
+  }
+
+  // Handlers Competencias
+  async function handleAgregarCompetencia(data: {
+    clave: string;
+    titulo: string;
+    descripcion: string;
+    aplicaA: string[];
+    tipo: string;
+  }) {
+    try {
+      const competenciaCreada = await apiCreateCompetencia({
+        clave: data.clave,
+        titulo: data.titulo,
+        descripcion: data.descripcion,
+        orden: competencias.length,
+        tipo: data.tipo
+      });
+
+      await apiSetAplicaCargos(competenciaCreada.id, data.aplicaA);
+      await cargarDatosCiclo(Number(cicloActualId));
+    } catch (e: any) {
+      console.error(e);
+      throw e;
+    }
+  }
+
+  async function handleToggleActiva(c: Competencia) {
+    try {
+      await apiToggleCompetenciaActiva(Number(c.id), !c.activa);
+      await cargarDatosCiclo(Number(cicloActualId));
+    } catch (e: any) {
+      console.error(e);
+      alert("Error actualizando competencia");
+    }
+  }
+
+  async function handleEliminarCompetencia(id: string) {
+    if (!confirm("¿Desactivar esta competencia?")) return;
+    try {
+      await apiToggleCompetenciaActiva(Number(id), false);
+      await cargarDatosCiclo(Number(cicloActualId));
+    } catch (e: any) {
+      console.error(e);
+      alert("Error desactivando competencia");
+    }
+  }
+
+  // Envío masivo de correos (comentado por ahora)
+  /*
   async function handleEnviarCorreosMasivo() {
     const pendientes = evaluadores.filter(e => e.estado === 'Pendiente');
-
     if (pendientes.length === 0) {
-      alert("No hay evaluadores pendientes para enviar correos");
+      alert("No hay evaluadores pendientes");
       return;
     }
-
-    if (!confirm(`¿Enviar ${pendientes.length} correos de evaluación?`)) return;
+    if (!confirm(`¿Enviar ${pendientes.length} correos?`)) return;
 
     try {
-      setLoading(true);
-
-      // Llamar al backend de NestJS
       const response = await fetch('http://192.168.3.87/eval360/api/email/enviar-masivo', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           evaluadores: pendientes.map(ev => ({
             id: ev.id,
@@ -684,369 +525,117 @@ function Dashboard() {
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Error en el servidor');
-      }
-
-      const result = await response.json();
-      alert(`✅ ${result.enviados || pendientes.length} correos enviados correctamente`);
-
+      if (!response.ok) throw new Error('Error en servidor');
+      alert(`✅ ${pendientes.length} correos enviados`);
     } catch (e: any) {
-      console.error(e);
       alert("Error enviando correos: " + e.message);
-    } finally {
-      setLoading(false);
     }
   }
+  */
 
-  function handleCopiarLinkEvaluacion(evaluador: Evaluador) {
-    const url = `${window.location.origin}${import.meta.env.BASE_URL}evaluar?evaluadorId=${evaluador.id}`;
-    setLinkCopiar(url);
-    setMostrarModalLink(true);
+  if (loading) {
+    return (
+      <div className="root">
+        <div className="app">
+          <div className="panel">
+            <p>Cargando datos...</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  function handleClickImportarArchivo() {
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-      fileInputRef.current.click();
-    }
+  if (error) {
+    return (
+      <div className="root">
+        <div className="app">
+          <div className="panel error">
+            <p>{error}</p>
+            <button
+              onClick={() => navigate('/ciclos')}
+              style={{
+                marginTop: '16px',
+                padding: '10px 20px',
+                background: '#4f46e5',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              📊 Ir a Gestión de Evaluaciones
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
-
-  async function handleArchivoImportado(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setImportando(true);
-
-      const arrayBuffer = await file.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: "array" });
-
-      const firstSheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[firstSheetName];
-
-      // Convertir a matriz de filas (sin usar cabeceras)
-      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        raw: true
-      }) as any[][];
-
-      // Esperamos: sin encabezados, columnas:
-      // 0: nombre
-      // 1: email
-      // 2: evaluado_nombre
-      // 3: cargo
-      const parsed: BulkEvaluadorInput[] = [];
-
-      for (const row of rows) {
-        if (!row || row.length === 0) continue; // fila vacía
-
-        const nombre = String(row[0] ?? "").trim();
-        const email = String(row[1] ?? "").trim();
-        const evaluadoNombre = String(row[2] ?? "").trim();
-        const cargo = String(row[3] ?? "").trim();
-
-        // Saltar filas completamente vacías
-        if (!nombre && !email && !evaluadoNombre && !cargo) continue;
-
-        // Validación básica en frontend
-        if (!nombre || !email || !evaluadoNombre || !cargo) {
-          throw new Error(
-            `Fila inválida: nombre, email, evaluado y cargo son obligatorios.\n` +
-            `Revisa que el archivo no tenga encabezados o filas incompletas.`
-          );
-        }
-
-        parsed.push({
-          nombre,
-          email,
-          evaluado_nombre: evaluadoNombre,
-          cargo
-        });
-      }
-
-      if (parsed.length === 0) {
-        alert("El archivo no contiene filas válidas.");
-        return;
-      }
-
-      // Llamar backend transaccional
-      const resp = await apiImportEvaluadoresBatch(parsed);
-
-      alert(`Se importaron ${resp.insertados} evaluadores correctamente.`);
-      await cargarTodo();
-    } catch (err: any) {
-      console.error(err);
-      alert(
-        `Error importando evaluadores:\n` +
-        (err?.message || "Revisa el archivo y los nombres de evaluados.")
-      );
-    } finally {
-      setImportando(false);
-    }
-  }
-
-
-
-  // ==========================
-  // Handlers Competencias (⚠️ Todavía Firebase - migrar Fase 3)
-  // ==========================
-
-  async function handleAgregarCompetencia(e: React.FormEvent) {
-    e.preventDefault();
-    if (!nuevaCompetencia.clave.trim() || !nuevaCompetencia.titulo.trim()) {
-      alert("La clave y el título son obligatorios");
-      return;
-    }
-
-    try {
-      // 1. Crear la competencia
-      const competenciaCreada = await apiCreateCompetencia({
-        clave: nuevaCompetencia.clave.trim(),
-        titulo: nuevaCompetencia.titulo.trim(),
-        descripcion: nuevaCompetencia.descripcion.trim(),
-        orden: competencias.length, // Asignar el siguiente orden disponible
-        tipo: nuevaCompetencia.tipo
-      });
-
-      // 2. Asignar los cargos seleccionados
-      await apiSetAplicaCargos(competenciaCreada.id, nuevaCompetencia.aplicaA);
-
-      setNuevaCompetencia({ clave: "", titulo: "", descripcion: "", aplicaA: [], tipo: "likert" });
-      setOpenCargos(false);
-      await cargarTodo();
-    } catch (e: any) {
-      console.error(e);
-      alert("Error agregando competencia: " + e.message);
-    }
-  }
-
-  async function handleToggleActiva(c: Competencia) {
-    try {
-      await apiToggleCompetenciaActiva(Number(c.id), !c.activa);
-      await cargarTodo();
-    } catch (e: any) {
-      console.error(e);
-      alert("Error actualizando competencia");
-    }
-  }
-
-  async function handleEliminarCompetencia(id: string) {
-    if (!confirm("¿Eliminar esta competencia? Esta acción no se puede deshacer.")) return;
-    try {
-      const comp = competencias.find(c => c.id === id);
-      if (comp) {
-        // la “eliminación” se implementa como desactivar en PostgreSQL
-        await apiToggleCompetenciaActiva(Number(id), false);
-        alert("Competencia desactivada (no se puede eliminar si tiene evaluaciones asociadas)");
-        await cargarTodo();
-      }
-    } catch (e: any) {
-      console.error(e);
-      alert("Error eliminando competencia");
-    }
-  }
-
-
-  function toggleCargoAplica(cargo: string) {
-    setNuevaCompetencia((prev) => {
-      const seleccionados = prev.aplicaA || [];
-      if (seleccionados.includes(cargo)) {
-        return {
-          ...prev,
-          aplicaA: seleccionados.filter((c) => c !== cargo)
-        };
-      } else {
-        return {
-          ...prev,
-          aplicaA: [...seleccionados, cargo]
-        };
-      }
-    });
-  }
-
-  // ==========================
-  // Render Dashboard
-  // ==========================
-
-
-
 
   return (
-
     <div className="root">
       <div className="app">
         <header className="header">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <div>
               <h1>🎯 Evaluación 360° - Dashboard</h1>
-              <p>Administra el personal a evaluar, los evaluadores y las preguntas.</p>
+              <p>
+                <strong>Evaluación actual:</strong> {cicloActualNombre}
+              </p>
             </div>
-            <button
-              onClick={() => navigate('/resultados')}
-              style={{
-                padding: '10px 20px',
-                background: '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              📊 Ver Resultados
-            </button>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => navigate('/ciclos')}
+                style={{
+                  padding: '10px 20px',
+                  background: '#6366f1',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                📋 Gestión de Evaluaciones
+              </button>
+              <button
+                onClick={() => navigate('/resultados')}
+                style={{
+                  padding: '10px 20px',
+                  background: '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                📊 Ver Resultados
+              </button>
+            </div>
           </div>
         </header>
 
-        {loading && (
-          <div className="panel">
-            <p>Cargando datos...</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="panel error">
-            <p>{error}</p>
-          </div>
-        )}
-
-        {!loading && stats && (
-          <section className="grid">
-            <div className="card">
-              <h3>Total Evaluadores</h3>
-              <p className="big-number">{stats.totalEvaluadores}</p>
-            </div>
-            <div className="card">
-              <h3>Total Evaluados</h3>
-              <p className="big-number">{stats.totalEvaluados}</p>
-            </div>
-            <div className="card">
-              <h3>Evaluaciones Completadas</h3>
-              <p className="big-number">{stats.totalEvaluaciones}</p>
-            </div>
-            <div className="card">
-              <h3>Evaluadores Pendientes</h3>
-              <p className="big-number">{evaluadoresPendientes}</p>
-            </div>
-            <div className="card">
-              <h3>Competencias Activas</h3>
-              <p className="big-number">{competenciasActivas}</p>
-            </div>
-            <div className="card">
-              <h3>Tasa de Completado</h3>
-              <p className="big-number">{tasaCompletado}%</p>
-            </div>
-          </section>
+        {stats && (
+          <DashboardStatsCards
+            stats={stats}
+            evaluadoresPendientes={evaluadoresPendientes}
+            competenciasActivas={competenciasActivas}
+          />
         )}
 
         {/* Evaluadores */}
         <section className="panel">
           <h2>🧑‍💼 Evaluadores</h2>
           <p className="sub">
-            Registra manualmente a las personas que van a evaluar. Cada una tendrá
-            un link único de evaluación que puedes copiar.
+            Registra a las personas que evaluarán en este ciclo. Cada una tendrá un enlace único.
           </p>
-          {/* Botón de importación */}
-          <div style={{ marginBottom: "12px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={handleClickImportarArchivo}
-              disabled={importando}
-              style={{
-                padding: "8px 16px",
-                borderRadius: "10px",
-                border: "none",
-                background: "#10b981",
-                color: "white",
-                fontWeight: 600,
-                cursor: importando ? "not-allowed" : "pointer"
-              }}
-            >
-              {importando ? "Importando..." : "📂 Importar Excel / CSV"}
-            </button>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              style={{ display: "none" }}
-              onChange={handleArchivoImportado}
-            />
-          </div>
-
-          <div style={{ marginBottom: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={handleEnviarCorreosMasivo}
-              disabled={loading || evaluadores.filter(e => e.estado === 'Pendiente').length === 0}
-              style={{
-                padding: '10px 20px',
-                background: loading ? '#9ca3af' : '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontWeight: '600',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              📧 {loading ? 'Enviando...' : `Enviar ${evaluadores.filter(e => e.estado === 'Pendiente').length} correos pendientes`}
-            </button>
-          </div>
-
-          <form className="form-row" onSubmit={handleAgregarEvaluador}>
-            <input
-              type="text"
-              placeholder="Nombre del evaluador"
-              value={nuevoEvaluador.nombre}
-              onChange={(e) =>
-                setNuevoEvaluador({ ...nuevoEvaluador, nombre: e.target.value })
-              }
-            />
-            <input
-              type="email"
-              placeholder="Correo electrónico"
-              value={nuevoEvaluador.email}
-              onChange={(e) =>
-                setNuevoEvaluador({ ...nuevoEvaluador, email: e.target.value })
-              }
-            />
-            <select
-              className="select-cargo"
-              value={nuevoEvaluador.evaluadoId}
-              onChange={(e) =>
-                setNuevoEvaluador({ ...nuevoEvaluador, evaluadoId: e.target.value })
-              }
-            >
-              <option value="">Selecciona a quién evaluará</option>
-              {evaluados.map((ev) => (
-                <option key={ev.id} value={ev.id}>
-                  {ev.nombre} — {ev.puesto} ({ev.area})
-                </option>
-              ))}
-            </select>
-            <select
-              className="select-cargo"
-              value={nuevoEvaluador.cargo}
-              onChange={(e) =>
-                setNuevoEvaluador({ ...nuevoEvaluador, cargo: e.target.value })
-              }
-            >
-              <option value="">Cargo respecto al evaluado</option>
-              <option>Jefe inmediato</option>
-              <option>Compañero</option>
-              <option>Sub-alterno</option>
-              <option>Cliente</option>
-              <option>Autoevaluacion</option>
-            </select>
-            <button type="submit">➕ Agregar evaluador</button>
-          </form>
+          <FormEvaluador
+            evaluados={evaluados}
+            cicloId={cicloActualId || "0"}
+            onSubmit={handleAgregarEvaluador}
+            onImportBatch={handleImportarEvaluadores}
+          />
 
           <DataTable
             rows={evaluadores}
@@ -1117,43 +706,16 @@ function Dashboard() {
             }}
             initialPageSize={10}
           />
-
         </section>
 
         {/* Evaluados */}
         <section className="panel">
           <h2>👤 Personal a Evaluar</h2>
           <p className="sub">
-            Aquí agregas solo a las personas que podrán ser seleccionadas en el formulario.
+            Personas que pueden ser evaluadas en cualquier ciclo.
           </p>
 
-          <form className="form-row" onSubmit={handleAgregarEvaluado}>
-            <input
-              type="text"
-              placeholder="Nombre completo"
-              value={nuevoEvaluado.nombre}
-              onChange={(e) =>
-                setNuevoEvaluado({ ...nuevoEvaluado, nombre: e.target.value })
-              }
-            />
-            <input
-              type="text"
-              placeholder="Puesto (ej: Ingeniero Senior)"
-              value={nuevoEvaluado.puesto}
-              onChange={(e) =>
-                setNuevoEvaluado({ ...nuevoEvaluado, puesto: e.target.value })
-              }
-            />
-            <input
-              type="text"
-              placeholder="Área (ej: Desarrollo)"
-              value={nuevoEvaluado.area}
-              onChange={(e) =>
-                setNuevoEvaluado({ ...nuevoEvaluado, area: e.target.value })
-              }
-            />
-            <button type="submit">➕ Agregar</button>
-          </form>
+          <FormEvaluado onSubmit={handleAgregarEvaluado} />
 
           <DataTable
             rows={evaluados}
@@ -1190,7 +752,6 @@ function Dashboard() {
             getSearchText={(e) => `${e.nombre} ${e.puesto} ${e.area}`}
             initialPageSize={10}
           />
-
         </section>
 
         {/* Competencias */}
@@ -1198,88 +759,12 @@ function Dashboard() {
           <h2>📋 Preguntas / Competencias</h2>
           <p className="sub">
             Estas competencias se usarán para construir el formulario de evaluación.
-            Puedes limitar por cargo usando el selector.
           </p>
 
-          <form className="form-row" onSubmit={handleAgregarCompetencia}>
-            <input
-              type="text"
-              placeholder="Clave interna (ej: Comunicación_pregunta1)"
-              value={nuevaCompetencia.clave}
-              onChange={(e) =>
-                setNuevaCompetencia({ ...nuevaCompetencia, clave: e.target.value })
-              }
-            />
-            <input
-              type="text"
-              placeholder="Título o tema (ej: Comunicación / Responsabilidad / Compromiso)"
-              value={nuevaCompetencia.titulo}
-              onChange={(e) =>
-                setNuevaCompetencia({ ...nuevaCompetencia, titulo: e.target.value })
-              }
-            />
-            <input
-              type="text"
-              placeholder="Aqui se escribe la pregunta a realizar"
-              value={nuevaCompetencia.descripcion}
-              onChange={(e) =>
-                setNuevaCompetencia({
-                  ...nuevaCompetencia,
-                  descripcion: e.target.value
-                })
-              }
-            />
-            <select
-              className="select-cargo"
-              value={nuevaCompetencia.tipo}
-              onChange={(e) =>
-                setNuevaCompetencia({ ...nuevaCompetencia, tipo: e.target.value })
-              }
-            >
-              <option value="likert">Escala 1 a 5</option>
-              <option value="texto">Pregunta abierta</option>
-            </select>
-
-            <div className="multi-select">
-              <div
-                className="multi-select-trigger"
-                onClick={() => setOpenCargos((o) => !o)}
-              >
-                <span>
-                  {nuevaCompetencia.aplicaA.length === 0
-                    ? "Aplica a: todos los cargos"
-                    : `Aplica a: ${nuevaCompetencia.aplicaA.join(", ")}`}
-                </span>
-                <span className="multi-select-arrow">▾</span>
-              </div>
-
-              {openCargos && (
-                <div className="multi-select-dropdown">
-                  {CARGOS.map((cargo) => (
-                    <label key={cargo} className="multi-select-option">
-                      <input
-                        type="checkbox"
-                        checked={nuevaCompetencia.aplicaA.includes(cargo)}
-                        onChange={() => toggleCargoAplica(cargo)}
-                      />
-                      <span>{cargo}</span>
-                    </label>
-                  ))}
-
-                  <button
-                    type="button"
-                    className="multi-select-clear"
-                    onClick={() =>
-                      setNuevaCompetencia((prev) => ({ ...prev, aplicaA: [] }))
-                    }
-                  >
-                    Todos los cargos
-                  </button>
-                </div>
-              )}
-            </div>
-            <button type="submit">➕ Agregar pregunta</button>
-          </form>
+          <FormCompetencia
+            onSubmit={handleAgregarCompetencia}
+            totalCompetencias={competencias.length}
+          />
 
           <DataTable
             rows={competencias}
@@ -1298,6 +783,11 @@ function Dashboard() {
                 header: "Título",
                 render: (c) => c.titulo,
                 getSortValue: (c) => c.titulo.toLowerCase()
+              },
+              {
+                header: "Tipo",
+                render: (c) => c.tipo === "texto" ? "Abierta" : "Escala 1-5",
+                getSortValue: (c) => c.tipo
               },
               {
                 header: "Aplica a",
@@ -1342,15 +832,16 @@ function Dashboard() {
             }
             initialPageSize={10}
           />
-
         </section>
       </div>
+
+      {/* Modal Link */}
       {mostrarModalLink && (
         <div
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(255, 255, 255, 0.4)",
+            background: "rgba(0, 0, 0, 0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -1365,22 +856,12 @@ function Dashboard() {
               borderRadius: "12px",
               boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
               width: "90%",
-              maxWidth: "480px",
-              textAlign: "center"
+              maxWidth: "480px"
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ marginBottom: "12px", color: "#111827" }}>Enlace de evaluación</h3>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                justifyContent: "center",
-                marginBottom: "16px",
-                flexWrap: "wrap"
-              }}
-            >
+            <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
               <input
                 type="text"
                 readOnly
@@ -1392,7 +873,7 @@ function Dashboard() {
                   border: "1px solid #d1d5db",
                   borderRadius: "8px",
                   fontSize: "14px",
-                  background: "#ffffff",  // fondo blanco
+                  background: "#ffffff",
                   color: "#111827"
                 }}
                 onFocus={(e) => e.target.select()}
@@ -1402,9 +883,9 @@ function Dashboard() {
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(linkCopiar);
-                    alert("Enlace copiado al portapapeles");
+                    alert("Enlace copiado");
                   } catch {
-                    alert("Copia no soportada, seleccione el texto y cópielo manualmente.");
+                    alert("Selecciona y copia manualmente");
                   }
                 }}
                 style={{
@@ -1437,15 +918,12 @@ function Dashboard() {
           </div>
         </div>
       )}
-
     </div>
-
-
   );
 }
 
 // =====================================================
-// PÁGINA DE EVALUACIÓN (público) /evaluar?evaluadorId=...
+// PÁGINA DE EVALUACIÓN
 // =====================================================
 
 function EvaluarPage() {
@@ -1461,7 +939,6 @@ function EvaluarPage() {
   const [respuestasLikert, setRespuestasLikert] = useState<Record<string, number>>({});
   const [respuestasTexto, setRespuestasTexto] = useState<Record<string, string>>({});
   const [comentarios, setComentarios] = useState("");
-
   const [enviado, setEnviado] = useState(false);
 
   useEffect(() => {
@@ -1476,7 +953,6 @@ function EvaluarPage() {
           return;
         }
 
-        // ✅ Obtener evaluador desde PostgreSQL
         const ev = await apiGetEvaluador(Number(evaluadorId));
 
         if (!ev) {
@@ -1491,7 +967,6 @@ function EvaluarPage() {
           return;
         }
 
-        // ✅ Obtener el evaluado asignado
         const evaluadosRes = await apiFetchEvaluados();
         const evaluadoAsignado = evaluadosRes.find(e => e.id === ev.evaluado_id);
 
@@ -1501,10 +976,8 @@ function EvaluarPage() {
           return;
         }
 
-        // ⚠️ Competencias todavía desde Firebase
         const listaCompetencias = await apiFetchCompetenciasConCargos();
 
-        // Filtrar competencias por cargo y activas
         const cargo = ev.cargo;
         const compsFiltradas = listaCompetencias.filter((c) => {
           if (!c.activa) return false;
@@ -1519,7 +992,8 @@ function EvaluarPage() {
           cargo: ev.cargo,
           evaluadoId: String(ev.evaluado_id),
           fechaRegistro: ev.fecha_registro,
-          estado: ev.estado
+          estado: ev.estado,
+          cicloId: String(ev.ciclo_id)
         });
 
         setEvaluado({
@@ -1543,7 +1017,6 @@ function EvaluarPage() {
             tipo: c.tipo || "likert"
           }))
         );
-
       } catch (e: any) {
         console.error(e);
         setError(e?.message ?? "Error cargando formulario");
@@ -1563,7 +1036,6 @@ function EvaluarPage() {
     setRespuestasTexto((prev) => ({ ...prev, [clave]: texto }));
   }
 
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!evaluador || !evaluado) {
@@ -1571,7 +1043,6 @@ function EvaluarPage() {
       return;
     }
 
-    // Verificar SOLO las competencias de tipo escala (likert)
     const faltantesLikert = competencias.filter(
       (c) => c.tipo !== "texto" && respuestasLikert[c.clave] == null
     );
@@ -1581,14 +1052,12 @@ function EvaluarPage() {
       return;
     }
 
-
-
     try {
-      // Construir payload para PostgREST
       const payload = {
         evaluador_id: Number(evaluador.id),
         evaluado_id: Number(evaluado.id),
         cargo_evaluador: evaluador.cargo,
+        ciclo_id: Number(evaluador.cicloId),
         respuestas: competencias.map((c) => {
           if (c.tipo === "texto") {
             return {
@@ -1606,18 +1075,12 @@ function EvaluarPage() {
         comentarios: comentarios.trim()
       };
 
-
-      // Crear evaluación completa en PostgreSQL
       await apiCrearEvaluacionCompleta(payload);
-
-      // Actualizar estado del evaluador
-      await apiUpdateEvaluadorEstado(Number(evaluador.id), "Completada");
       setEnviado(true);
     } catch (e: any) {
       console.error(e);
-      alert("Error guardando la evaluación.");
+      alert("Error guardando la evaluación: " + e.message);
     }
-
   }
 
   if (loading) {
@@ -1662,9 +1125,7 @@ function EvaluarPage() {
         <div className="app">
           <div className="panel">
             <h2>✅ ¡Gracias por completar la evaluación!</h2>
-            <p>
-              Tu evaluación ha sido registrada correctamente.
-            </p>
+            <p>Tu evaluación ha sido registrada correctamente.</p>
           </div>
         </div>
       </div>
@@ -1683,23 +1144,32 @@ function EvaluarPage() {
 
         <section className="panel">
           <h2>👤 Persona a evaluar</h2>
-          <div className="evaluado-card">
-            <p><strong>👤 Nombre:</strong> {evaluado?.nombre}</p>
-            <p><strong>💼 Puesto:</strong> {evaluado?.puesto}</p>
-            <p><strong>🏢 Área:</strong> {evaluado?.area}</p>
+          {/* ✅ FIX VISUAL: Card mejorado con colores legibles */}
+          <div style={{
+            background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)',
+            padding: '20px',
+            borderRadius: '12px',
+            border: '2px solid #4f46e5',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+          }}>
+            <p style={{ margin: '8px 0', color: '#1e1b4b', fontSize: '16px' }}>
+              <strong>👤 Nombre:</strong> {evaluado?.nombre}
+            </p>
+            <p style={{ margin: '8px 0', color: '#1e1b4b', fontSize: '16px' }}>
+              <strong>💼 Puesto:</strong> {evaluado?.puesto}
+            </p>
+            <p style={{ margin: '8px 0', color: '#1e1b4b', fontSize: '16px' }}>
+              <strong>🏢 Área:</strong> {evaluado?.area}
+            </p>
           </div>
         </section>
 
         <section className="panel">
           <h2>📋 Preguntas</h2>
           <p className="sub">
-            Responde cada afirmación usando la escala de 1 a 5
-            (1 = Nunca
-            2 = Rara vez
-            3 = Algunas veces
-            4 = Casi siempre
-            5 = Excelente).
-            Las preguntas abiertas deben responderse en el cuadro de texto.
+            Responde cada afirmación usando la escala de 1 a 5 (1 = Nunca, 2 = Rara vez, 
+            3 = Algunas veces, 4 = Casi siempre, 5 = Excelente). Las preguntas abiertas 
+            deben responderse en el cuadro de texto.
           </p>
 
           <form onSubmit={handleSubmit}>
@@ -1708,9 +1178,7 @@ function EvaluarPage() {
                 <div key={c.id} className="pregunta-item">
                   <div className="pregunta-texto">
                     <strong>{c.titulo}</strong>
-                    {c.descripcion && (
-                      <p className="sub">{c.descripcion}</p>
-                    )}
+                    {c.descripcion && <p className="sub">{c.descripcion}</p>}
                   </div>
 
                   {c.tipo === "texto" ? (
@@ -1742,7 +1210,6 @@ function EvaluarPage() {
                 </div>
               ))}
             </div>
-
 
             <div className="comentarios">
               <label>
