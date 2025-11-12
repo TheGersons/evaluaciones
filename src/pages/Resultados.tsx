@@ -25,6 +25,7 @@ import {
 } from '../services/api';
 import type { EvaluadoDTO, RespuestaDTO, CicloEvaluacion } from '../types';
 import { navigate } from '../App';
+import { DataTable, type DataTableColumn } from '../components/common/DataTable';
 
 interface ResultadoEvaluado {
     evaluado: EvaluadoDTO;
@@ -466,6 +467,93 @@ export default function Resultados() {
             promedio: parseFloat(promedio.toFixed(2))
         }))
         : [];
+    // Normaliza la dimensión para estilos/orden
+    const norm = (s?: string) =>
+        (s ?? "N/A").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    // Prepara filas
+    const filasCompetencias = (competencias ?? [])
+        .filter(c => c.tipo !== "texto")
+        .map(c => ({
+            id: c.id,
+            dimension: c.dimension_general || "N/A",
+            titulo: c.titulo,
+            valor: (resultadoDetalle?.promediosPorCompetencia?.[c.id] ?? 0) as number,
+        }));
+
+    // Columnas
+    const colsCompetencias: DataTableColumn<typeof filasCompetencias[number]>[] = [
+        {
+            header: "Dimensión",
+            render: (row) => {
+                const d = row.dimension;
+                const bg =
+                    d === "Fiabilidad" ? "#fee2e2" :
+                        d === "Armonía" ? "#dbeafe" :
+                            d === "Interés" ? "#d1fae5" : "#f3f4f6";
+                const color =
+                    d === "Fiabilidad" ? "#991b1b" :
+                        d === "Armonía" ? "#1e40af" :
+                            d === "Interés" ? "#065f46" : "#374151";
+                return (
+                    <span style={{
+                        padding: "4px 10px",
+                        borderRadius: "12px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        background: bg, color
+                    }}>
+                        {row.dimension}
+                    </span>
+                );
+            },
+            getSortValue: (row) => norm(row.dimension),
+        },
+        {
+            header: "Competencia",
+            render: (row) => row.titulo,
+            getSortValue: (row) => row.titulo?.toLowerCase?.() ?? "",
+        },
+        {
+            header: "Puntaje",
+            render: (row) => {
+                const v = row.valor;
+                const color =
+                    v >= 4.5 ? "#10b981" :
+                        v >= 3.5 ? "#4f46e5" :
+                            v >= 2.5 ? "#f59e0b" : "#ef4444";
+                return <strong style={{ color }}>{v.toFixed(2)}</strong>;
+            },
+            getSortValue: (row) => row.valor,
+        },
+        {
+            header: "Valoración",
+            render: (row) => {
+                const v = row.valor;
+                const label = v >= 4.5 ? "Excelente" : v >= 3.5 ? "Alto" : v >= 2.5 ? "Promedio" : "Bajo";
+                const bg =
+                    v >= 4.5 ? "#d1fae5" :
+                        v >= 3.5 ? "#dbeafe" :
+                            v >= 2.5 ? "#fef3c7" : "#fee2e2";
+                const color =
+                    v >= 4.5 ? "#065f46" :
+                        v >= 3.5 ? "#1e40af" :
+                            v >= 2.5 ? "#92400e" : "#991b1b";
+                return (
+                    <span style={{
+                        padding: "4px 12px",
+                        borderRadius: "12px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        background: bg, color
+                    }}>
+                        {label}
+                    </span>
+                );
+            },
+            getSortValue: (row) => row.valor, // ordena por el score si quieres
+        },
+    ];
 
 
 
@@ -786,72 +874,15 @@ export default function Resultados() {
                         </div>
                         {/* Tabla de competencias */}
                         <div style={{ background: 'white', padding: '20px', borderRadius: '14px', marginBottom: '20px' }}>
-                            <h3 style={{ marginBottom: '16px', color: 'black' }}>Detalle por Competencia</h3>
-                            <table className="table">
-                                <thead>
-                                    <tr>
-                                        <th>Dimensión</th>
-                                        <th>Competencia</th>
-                                        <th>Puntaje</th>
-                                        <th>Valoración</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {competencias
-                                        .filter(c => c.tipo !== 'texto')
-                                        .map(comp => {
-                                            const valor = resultadoDetalle.promediosPorCompetencia[comp.id] || 0;
-                                            return (
-                                                <tr key={comp.id}>
-                                                    <td>
-                                                        <span style={{
-                                                            padding: '4px 10px',
-                                                            borderRadius: '12px',
-                                                            fontSize: '12px',
-                                                            fontWeight: '600',
-                                                            background: comp.dimension_general === 'Fiabilidad' ? '#fee2e2' :
-                                                                comp.dimension_general === 'Armonía' ? '#dbeafe' :
-                                                                    comp.dimension_general === 'Interés' ? '#d1fae5' : '#f3f4f6',
-                                                            color: comp.dimension_general === 'Fiabilidad' ? '#991b1b' :
-                                                                comp.dimension_general === 'Armonía' ? '#1e40af' :
-                                                                    comp.dimension_general === 'Interés' ? '#065f46' : '#374151'
-                                                        }}>
-                                                            {comp.dimension_general || 'N/A'}
-                                                        </span>
-                                                    </td>
-                                                    <td>{comp.titulo}</td>
-                                                    <td>
-                                                        <strong style={{
-                                                            color: valor >= 4.5 ? '#10b981' :
-                                                                valor >= 3.5 ? '#4f46e5' :
-                                                                    valor >= 2.5 ? '#f59e0b' : '#ef4444'
-                                                        }}>
-                                                            {valor.toFixed(2)}
-                                                        </strong>
-                                                    </td>
-                                                    <td>
-                                                        <span style={{
-                                                            padding: '4px 12px',
-                                                            borderRadius: '12px',
-                                                            fontSize: '12px',
-                                                            fontWeight: '600',
-                                                            background: valor >= 4.5 ? '#d1fae5' :
-                                                                valor >= 3.5 ? '#dbeafe' :
-                                                                    valor >= 2.5 ? '#fef3c7' : '#fee2e2',
-                                                            color: valor >= 4.5 ? '#065f46' :
-                                                                valor >= 3.5 ? '#1e40af' :
-                                                                    valor >= 2.5 ? '#92400e' : '#991b1b'
-                                                        }}>
-                                                            {valor >= 4.5 ? 'Excelente' :
-                                                                valor >= 3.5 ? 'Alto' :
-                                                                    valor >= 2.5 ? 'Promedio' : 'Bajo'}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                </tbody>
-                            </table>
+                            <section style={{ background: "white", padding: 20, borderRadius: 14 }}>
+                                <h3 style={{ marginBottom: 12, color: "black" }}>Resultados por competencia</h3>
+                                <DataTable
+                                    rows={filasCompetencias}
+                                    columns={colsCompetencias}
+                                    getSearchText={(r) => `${r.dimension} ${r.titulo}`}
+                                    initialPageSize={5} // 5 por defecto
+                                />
+                            </section>
                         </div>
 
                         {/* Resumen por Dimensión General */}
@@ -897,55 +928,90 @@ export default function Resultados() {
                         </div>
 
                         {/* Comentarios */}
-                        {resultadoDetalle.comentarios.length > 0 && (
-                            <div style={{ background: 'white', padding: '20px', borderRadius: '14px', marginBottom: '20px' }}>
-                                <h3 style={{ marginBottom: '16px', color: 'black' }}>💬 Comentarios de Evaluadores</h3>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                    {resultadoDetalle.comentarios.map((comentario, index) => (
-                                        <div key={index} style={{
-                                            background: '#f3f4f6',
-                                            padding: '12px 16px',
-                                            borderRadius: '8px',
-                                            borderLeft: '3px solid #4f46e5'
-                                        }}>
-                                            <p style={{ margin: 0, color: '#374151' }}>{comentario}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                        {(resultadoDetalle?.comentarios?.length ?? 0) > 0 && (
+                            <div style={{ background: "white", padding: 20, borderRadius: 14 }}>
+                                <h3 style={{ marginBottom: 16, color: "black" }}>💬 Comentarios de Evaluadores</h3>
+
+                                {(() => {
+                                    const filas = resultadoDetalle.comentarios.map((texto: string, i: number) => ({ i, texto }));
+                                    const cols: DataTableColumn<typeof filas[number]>[] = [
+                                        {
+                                            header: "Comentario",
+                                            render: (row) => (
+                                                <div style={{
+                                                    background: "#f3f4f6",
+                                                    padding: "12px 16px",
+                                                    borderRadius: 8,
+                                                    borderLeft: "3px solid #4f46e5"
+                                                }}>
+                                                    <p style={{ margin: 0, color: "#374151" }}>{row.texto}</p>
+                                                </div>
+                                            ),
+                                            getSortValue: (row) => row.texto?.toLowerCase?.() ?? "",
+                                        },
+                                    ];
+
+                                    return (
+                                        <DataTable
+                                            rows={filas}
+                                            columns={cols}
+                                            getSearchText={(r) => r.texto}
+                                            initialPageSize={5}
+                                        />
+                                    );
+                                })()}
                             </div>
                         )}
 
+
                         {/* Respuestas abiertas */}
-                        {resultadoDetalle.abiertasPorCompetencia &&
-                            resultadoDetalle.abiertasPorCompetencia.length > 0 && (
-                                <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
-                                    <h3 style={{ marginBottom: '16px', color: 'black' }}>📝 Respuestas abiertas por competencia</h3>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                        {resultadoDetalle.abiertasPorCompetencia.map((item) => (
-                                            <div key={item.competenciaId} style={{
-                                                borderRadius: '10px',
-                                                border: '1px solid #e5e7eb',
-                                                padding: '12px 16px',
-                                                background: '#f9fafb'
-                                            }}>
-                                                <h4 style={{ margin: '0 0 8px 0', color: '#111827' }}>{item.pregunta}</h4>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                    {item.textos.map((txt, idx) => (
-                                                        <div key={idx} style={{
-                                                            background: '#ffffff',
-                                                            padding: '8px 10px',
-                                                            borderRadius: '8px',
-                                                            border: '1px solid #e5e7eb'
-                                                        }}>
-                                                            <p style={{ margin: 0, color: '#374151' }}>{txt}</p>
-                                                        </div>
-                                                    ))}
+                        {resultadoDetalle?.abiertasPorCompetencia?.length > 0 && (
+                            <div style={{ background: "white", padding: 20, borderRadius: 14 }}>
+                                <h3 style={{ marginBottom: 16, color: "black" }}>📝 Respuestas abiertas por competencia</h3>
+
+                                {resultadoDetalle.abiertasPorCompetencia.map((item: any, qidx: number) => {
+                                    // Filas: una por respuesta
+                                    const filas = (item.textos ?? []).map((txt: string, idx: number) => ({
+                                        id: `${item.competenciaId ?? qidx}-${idx}`,
+                                        respuesta: txt,
+                                    }));
+
+                                    const cols: DataTableColumn<typeof filas[number]>[] = [
+                                        {
+                                            header: "Respuesta",
+                                            render: (row) => (
+                                                <div style={{
+                                                    background: "#ffffff",
+                                                    padding: "8px 10px",
+                                                    borderRadius: 8,
+                                                    border: "1px solid #e5e7eb"
+                                                }}>
+                                                    <p style={{ margin: 0, color: "#374151" }}>{row.respuesta}</p>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
+                                            ),
+                                            getSortValue: (row) => row.respuesta?.toLowerCase?.() ?? "",
+                                        },
+                                    ];
+
+                                    return (
+                                        <section key={item.competenciaId ?? qidx} style={{ marginBottom: 20 }}>
+                                            {/* Título = Pregunta */}
+                                            <h4 style={{ margin: "0 0 12px 0", color: "#111827" }}>{item.pregunta}</h4>
+
+                                            <DataTable
+                                                rows={filas}
+                                                columns={cols}
+                                                getSearchText={(r) => r.respuesta}
+                                                initialPageSize={5}   // 5 por defecto
+                                            // pageSizeOptions={[5, 10, 25]} // descomenta si tu DataTable soporta cambiar tamaño
+                                            />
+                                        </section>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+
                     </section>
                 )}
             </div>
