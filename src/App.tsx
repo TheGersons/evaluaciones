@@ -80,16 +80,28 @@ function App() {
   // Rutas protegidas con AdminGate
   return (
     <AdminGate>
-      {/* Resultados */}
-      {path.startsWith("/resultados") && <ResultadosPage />}
-
-      {/* Dashboard con nombre de evaluación */}
-      {path.match(/^\/[^/]+$/) && path !== "/" && <DashboardPage />}
-
-      {/* Gestión de Ciclos (ruta raíz) */}
-      <GestionCiclosPage />
+      <ProtectedRoutes path={path} />
     </AdminGate>
   );
+}
+
+// =====================================================
+// COMPONENTE PARA RUTAS PROTEGIDAS
+// =====================================================
+
+function ProtectedRoutes({ path }: { path: string }) {
+  // Resultados
+  if (path.startsWith("/resultados")) {
+    return <ResultadosPage />;
+  }
+
+  // Dashboard con nombre de evaluación
+  if (path.match(/^\/[^/]+$/) && path !== "/") {
+    return <DashboardPage />;
+  }
+
+  // Gestión de Ciclos (ruta raíz)
+  return <GestionCiclosPage />;
 }
 
 export default App;
@@ -270,7 +282,6 @@ function EvaluarPage() {
         return;
       }
 
-      // Importar las funciones de API dinámicamente
       const {
         apiGetEvaluador,
         apiFetchEvaluados,
