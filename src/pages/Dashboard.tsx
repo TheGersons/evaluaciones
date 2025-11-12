@@ -5,7 +5,6 @@ import { DashboardStatsCards } from '../components/dashboard/DashboardStats';
 import { FormEvaluado } from '../components/dashboard/FormEvaluados'
 import { FormEvaluador } from '../components/dashboard/FormEvaluadores';
 import { FormCompetencia } from '../components/dashboard/FormCompetencia';
-import { ModalEditarCompetencia } from '../components/dashboard/ModalEditarCompetencia';
 import type {
   Evaluado,
   Evaluador,
@@ -30,6 +29,7 @@ import {
   apiUpdateCompetencia
 } from '../services/api';
 import { navigate } from '../App';
+import ModalEditarCompetencia from '../components/dashboard/ModalEditarCompetencia';
 
 export default function Dashboard() {
   // Estado global
@@ -112,7 +112,8 @@ export default function Dashboard() {
           activa: c.activa,
           aplicaA: c.aplicaA || [],
           tipo: c.tipo || 'likert',
-          dimensionGeneral: c.dimension_general
+          dimensionGeneral: c.dimension_general,
+          grupo : c.grupo
         }))
       );
 
@@ -248,12 +249,14 @@ export default function Dashboard() {
 
   async function handleEditarCompetencia(
     id: string,
-    data: { clave: string; titulo: string; descripcion: string; aplicaA: string[] }
+    data: { clave: string; titulo: string; descripcion: string; aplicaA: string[], dimension: string, grupo: string }
   ) {
     await apiUpdateCompetencia(Number(id), {
       clave: data.clave,
       titulo: data.titulo,
-      descripcion: data.descripcion
+      descripcion: data.descripcion,
+      dimension_general: data.dimension,
+      grupo: data.grupo
     });
 
     await apiSetAplicaCargos(Number(id), data.aplicaA);
@@ -548,6 +551,16 @@ export default function Dashboard() {
                 header: 'Activa',
                 render: (c) => (c.activa ? 'Sí' : 'No'),
                 getSortValue: (c) => (c.activa ? 1 : 0)
+              },
+              {
+                header : 'Dimension',
+                render : (c) => (c.dimensionGeneral),
+                getSortValue : (c) => c.dimensionGeneral?.toLowerCase() ?? ""
+              },
+              {
+                header : 'Grupo Dimension',
+                render : (c) => (c.grupo),
+                getSortValue : (c) => c.grupo?.toLowerCase() ?? ""
               },
               {
                 header: 'Acciones',

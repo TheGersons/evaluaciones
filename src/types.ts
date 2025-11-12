@@ -197,7 +197,8 @@ export interface NuevaCompetencia {
   descripcion: string;
   aplicaA: string[];
   tipo: string;
-  dimensionGeneral?: string;
+  dimensionGeneral: string;
+  grupo: string;
 }
 
 export interface NuevoCiclo {
