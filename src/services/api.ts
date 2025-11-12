@@ -540,3 +540,74 @@ export async function apiFetchDashboardStats(): Promise<{
     evaluadoresCompletados: evaluadores.filter(e => e.estado === 'Completada').length
   };
 }
+
+// Nueva función: Obtener competencias por ciclo específico
+export async function apiFetchCompetenciasConCargosPorCiclo(
+  cicloId: number
+): Promise<Array<CompetenciaDTO & { aplicaA: string[] }>> {
+  // Obtener competencias vinculadas al ciclo
+  const cicloCompetencias = await apiFetchCompetenciasDeCiclo(cicloId);
+  
+  if (cicloCompetencias.length === 0) {
+    return [];
+  }
+
+  const competenciaIds = cicloCompetencias.map(cc => cc.competencia_id);
+  
+  // Obtener datos completos de competencias
+  const competencias = await apiFetch<CompetenciaDTO[]>(
+    `/competencias?id=in.(${competenciaIds.join(',')})&order=orden.asc`
+  );
+  
+  // Obtener cargos
+  const relaciones = await apiFetch<CompetenciaAplicaCargoDTO[]>(
+    `/competencias_aplica_cargo?competencia_id=in.(${competenciaIds.join(',')})`
+  );
+
+  const cargosPorCompetencia = new Map<number, string[]>();
+  for (const rel of relaciones) {
+    const lista = cargosPorCompetencia.get(rel.competencia_id) ?? [];
+    lista.push(rel.cargo);
+    cargosPorCompetencia.set(rel.competencia_id, lista);
+  }
+
+  return competencias.map(comp => ({
+    ...comp,
+    aplicaA: cargosPorCompetencia.get(comp.id) ?? [],
+  }));
+}
+
+// Nueva función: Crear competencia Y vincularla a un ciclo
+export async function apiCreateCompetenciaEnCiclo(
+  cicloId: number,
+  data: {
+    clave: string;
+    titulo: string;
+    descripcion?: string;
+    orden?: number;
+    tipo?: string;
+    grupo?: string;
+    dimension_general?: string;
+  },
+  aplicaA: string[]
+): Promise<CompetenciaDTO> {
+  // 1. Crear la competencia
+  const competencia = await apiCreateCompetencia(data);
+  
+  // 2. Vincularla al ciclo
+  await apiFetch('/ciclos_competencias', {
+    method: 'POST',
+    body: JSON.stringify({
+      ciclo_id: cicloId,
+      competencia_id: competencia.id,
+      activa: true
+    }),
+  });
+  
+  // 3. Asignar cargos
+  if (aplicaA.length > 0) {
+    await apiSetAplicaCargos(competencia.id, aplicaA);
+  }
+  
+  return competencia;
+}

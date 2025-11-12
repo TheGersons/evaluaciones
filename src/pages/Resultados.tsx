@@ -20,7 +20,6 @@ import {
     apiFetchEvaluados,
     apiFetchEvaluaciones,
     apiFetchRespuestasPorEvaluaciones,
-    apiFetchCompetenciasConCargos,
     apiFetchCiclos
 } from '../services/api';
 import type { EvaluadoDTO, RespuestaDTO, CicloEvaluacion } from '../types';
@@ -140,7 +139,7 @@ export default function Resultados() {
             const [evaluados, evaluaciones, comps] = await Promise.all([
                 apiFetchEvaluados(),
                 apiFetchEvaluaciones(Number(cicloSeleccionado)),
-                apiFetchCompetenciasConCargos()
+                import('../services/api').then(api => api.apiFetchCompetenciasConCargosPorCiclo(Number(cicloSeleccionado)))
             ]);
 
             const todasLasRespuestas = await apiFetchRespuestasPorEvaluaciones(

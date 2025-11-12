@@ -480,10 +480,6 @@ body {
   color: #374151;                   /* gris oscuro para las etiquetas */
 }
 
-/* ============================================
-   MEJORAS TIPOGRÁFICAS Y ESTÉTICAS GLOBALES
-   Agregar al final de App.css
-   ============================================ */
 
 /* Importar fuente moderna de Google Fonts (opcional pero recomendado) */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');

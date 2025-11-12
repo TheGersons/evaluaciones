@@ -14,8 +14,6 @@ import type {
   BulkEvaluadorInput
 } from '../types';
 import {
-  apiFetchCompetenciasConCargos,
-  apiCreateCompetencia,
   apiSetAplicaCargos,
   apiToggleCompetenciaActiva,
   apiFetchEvaluados,
@@ -26,7 +24,8 @@ import {
   apiDeleteEvaluador,
   apiFetchDashboardStats,
   apiImportEvaluadoresBatch,
-  apiUpdateCompetencia
+  apiUpdateCompetencia,
+  apiFetchCompetenciasConCargosPorCiclo
 } from '../services/api';
 import { navigate } from '../App';
 import ModalEditarCompetencia from '../components/dashboard/ModalEditarCompetencia';
@@ -67,7 +66,7 @@ export default function Dashboard() {
       const [evaluadosRes, evaluadoresRes, competenciasRes, statsRes] = await Promise.all([
         apiFetchEvaluados(),
         apiFetchEvaluadores(Number(cicloActivoId)),
-        apiFetchCompetenciasConCargos(),
+        apiFetchCompetenciasConCargosPorCiclo(Number(cicloActivoId)),
         apiFetchDashboardStats()
       ]);
 
@@ -227,25 +226,30 @@ export default function Dashboard() {
   // ===========================================
 
   async function handleAgregarCompetencia(data: {
-    clave: string;
-    titulo: string;
-    descripcion: string;
-    aplicaA: string[];
-    tipo: string;
-    dimensionGeneral?: string;
-  }) {
-    const competenciaCreada = await apiCreateCompetencia({
+  clave: string;
+  titulo: string;
+  descripcion: string;
+  aplicaA: string[];
+  tipo: string;
+  dimensionGeneral?: string;
+}) {
+  const { apiCreateCompetenciaEnCiclo } = await import('../services/api');
+  
+  await apiCreateCompetenciaEnCiclo(
+    Number(cicloActivoId),
+    {
       clave: data.clave,
       titulo: data.titulo,
       descripcion: data.descripcion,
       orden: competencias.length,
       tipo: data.tipo,
       dimension_general: data.dimensionGeneral
-    });
+    },
+    data.aplicaA
+  );
 
-    await apiSetAplicaCargos(competenciaCreada.id, data.aplicaA);
-    await cargarTodo();
-  }
+  await cargarTodo();
+}
 
   async function handleEditarCompetencia(
     id: string,
