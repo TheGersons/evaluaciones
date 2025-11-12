@@ -69,18 +69,6 @@ const GROUP_COLORS = [
     MORE_COLORS[2], // #10b981 (Grupo 3)
 ];
 
-// Los 9 títulos de las barras en el orden exacto de dataGrupos
-const BAR_TITLES = [
-    'Gestión del Desempeño',
-    'Ser Modelo',
-    'Perseverancia y Resiliencia',
-    'Apoyo',
-    'Conducta Ética',
-    'Respeto',
-    'Pensamiento Positivo',
-    'Gestión Emocional',
-    'Autoconocimiento',
-];
 
 
 export default function Resultados() {
