@@ -1,5 +1,5 @@
 // src/components/common/DataTable.tsx
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 type SortDirection = "asc" | "desc";
 
@@ -15,6 +15,7 @@ export interface DataTableProps<T> {
   searchPlaceholder?: string;
   getSearchText?: (row: T) => string;
   initialPageSize?: number;
+  searchable?: boolean; // <- NUEVA PROP
 }
 
 export function DataTable<T>({
@@ -22,7 +23,8 @@ export function DataTable<T>({
   columns,
   searchPlaceholder = "Buscar...",
   getSearchText,
-  initialPageSize = 10
+  initialPageSize = 10,
+  searchable = true, // <- por defecto visible
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(initialPageSize);
@@ -30,12 +32,13 @@ export function DataTable<T>({
   const [sortIndex, setSortIndex] = useState<number | null>(null);
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
 
-  // Filtro por texto
-  const filtered = rows.filter((row) => {
-    if (!search.trim() || !getSearchText) return true;
-    const haystack = getSearchText(row).toLowerCase();
-    return haystack.includes(search.toLowerCase());
-  });
+  // Filtro por texto (solo si searchable y hay getSearchText)
+  const filtered = useMemo(() => {
+    if (!searchable || !getSearchText) return rows;
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((row) => (getSearchText(row) || "").toLowerCase().includes(q));
+  }, [rows, searchable, getSearchText, search]);
 
   // Orden
   let sorted = filtered;
@@ -68,6 +71,7 @@ export function DataTable<T>({
     } else {
       setSortIndex(index);
       setSortDir("asc");
+      setPage(1); // vuelve a la primera página al cambiar orden
     }
   }
 
@@ -92,22 +96,25 @@ export function DataTable<T>({
         gap: "8px",
         flexWrap: "wrap"
       }}>
-        <input
-          type="text"
-          placeholder={searchPlaceholder}
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          style={{
-            flex: "1",
-            minWidth: "200px",
-            padding: "6px 10px",
-            borderRadius: "8px",
-            border: "1px solid #d1d5db",
-            fontSize: "14px",
-            background: "#ffffff",
-            color: "#111827"
-          }}
-        />
+        {/* Input de búsqueda solo si searchable y hay getSearchText */}
+        {searchable && getSearchText && (
+          <input
+            type="text"
+            placeholder={searchPlaceholder}
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            style={{
+              flex: "1",
+              minWidth: "200px",
+              padding: "6px 10px",
+              borderRadius: "8px",
+              border: "1px solid #d1d5db",
+              fontSize: "14px",
+              background: "#ffffff",
+              color: "#111827"
+            }}
+          />
+        )}
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontSize: "13px", color: "#6b7280" }}>Filas por página</span>

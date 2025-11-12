@@ -881,6 +881,7 @@ export default function Resultados() {
                                     columns={colsCompetencias}
                                     getSearchText={(r) => `${r.dimension} ${r.titulo}`}
                                     initialPageSize={5} // 5 por defecto
+                                    searchable={false}
                                 />
                             </section>
                         </div>
@@ -957,6 +958,7 @@ export default function Resultados() {
                                             columns={cols}
                                             getSearchText={(r) => r.texto}
                                             initialPageSize={5}
+                                            searchable={false}
                                         />
                                     );
                                 })()}
@@ -1003,6 +1005,7 @@ export default function Resultados() {
                                                 columns={cols}
                                                 getSearchText={(r) => r.respuesta}
                                                 initialPageSize={5}   // 5 por defecto
+                                                searchable={false}
                                             // pageSizeOptions={[5, 10, 25]} // descomenta si tu DataTable soporta cambiar tamaño
                                             />
                                         </section>
