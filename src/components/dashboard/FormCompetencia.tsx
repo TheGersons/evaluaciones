@@ -8,13 +8,14 @@ interface FormCompetenciaProps {
   totalCompetencias: number;
 }
 
-export function FormCompetencia({ onSubmit, /*totalCompetencias*/ }: FormCompetenciaProps) {
+export function FormCompetencia({ onSubmit, /*totalCompetencias */}: FormCompetenciaProps) {
   const [datos, setDatos] = useState<NuevaCompetencia>({
     clave: '',
     titulo: '',
     descripcion: '',
     aplicaA: [],
-    tipo: 'likert'
+    tipo: 'likert',
+    dimensionGeneral: 'Fiabilidad'
   });
 
   const [openCargos, setOpenCargos] = useState(false);

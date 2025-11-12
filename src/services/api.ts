@@ -301,6 +301,7 @@ export async function apiCreateCompetencia(data: {
   orden?: number;
   tipo?: string;
   grupo?: string;
+  dimension_general?: string;
 }): Promise<CompetenciaDTO> {
   const result = await apiFetch<CompetenciaDTO[]>('/competencias', {
     method: 'POST',
@@ -315,6 +316,7 @@ export async function apiCreateCompetencia(data: {
       activa: true,
       tipo: data.tipo || 'likert',
       grupo: data.grupo || null,
+      dimension_general: data.dimension_general || null,
       escala_min: 1,
       escala_max: 5,
       etiqueta_min: 'Muy bajo',

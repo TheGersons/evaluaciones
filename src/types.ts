@@ -88,6 +88,8 @@ export interface Competencia {
   activa: boolean;
   aplicaA: string[];
   tipo: string;
+  dimensionGeneral?: string;
+  grupo?: string;
 }
 
 export interface CompetenciaDTO {
@@ -99,6 +101,7 @@ export interface CompetenciaDTO {
   activa: boolean;
   tipo?: string;
   grupo?: string;
+  dimension_general?: string;
   escala_min?: number;
   escala_max?: number;
   etiqueta_min?: string;
@@ -194,6 +197,7 @@ export interface NuevaCompetencia {
   descripcion: string;
   aplicaA: string[];
   tipo: string;
+  dimensionGeneral?: string;
 }
 
 export interface NuevoCiclo {

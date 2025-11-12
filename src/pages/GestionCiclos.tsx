@@ -1,5 +1,6 @@
 // src/pages/GestionCiclos.tsx
 import { useState, useEffect } from 'react';
+import { DataTable } from '../components/common/DataTable';
 import type { CicloEvaluacion, NuevoCiclo, CicloStats } from '../types';
 import { ESTADOS_CICLO } from '../types';
 import {
@@ -11,7 +12,6 @@ import {
   apiFetchStatsPorCiclo
 } from '../services/api';
 import { navigate } from '../App';
-import { DataTable } from '../components/common/DataTable';
 
 export default function GestionCiclos() {
   const [ciclos, setCiclos] = useState<CicloEvaluacion[]>([]);
@@ -143,9 +143,11 @@ export default function GestionCiclos() {
     }
   }
 
-  function handleSeleccionarCiclo(id: string) {
+  function handleSeleccionarCiclo(id: string, nombre: string) {
     localStorage.setItem('ciclo_activo_id', id);
-    navigate('/');
+    // Usar el nombre como ruta, reemplazando espacios por guiones
+    const nombreRuta = nombre.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    navigate(`/${nombreRuta}`);
   }
 
   if (loading) {
@@ -372,7 +374,7 @@ export default function GestionCiclos() {
                 render: (c) => (
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <button
-                      onClick={() => handleSeleccionarCiclo(c.id)}
+                      onClick={() => handleSeleccionarCiclo(c.id, c.nombre)}
                       style={{
                         padding: '6px 12px',
                         background: '#4f46e5',
