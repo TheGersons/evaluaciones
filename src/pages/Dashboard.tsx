@@ -603,6 +603,7 @@ export default function Dashboard() {
               `${c.clave} ${c.titulo} ${c.descripcion || ''} ${(c.aplicaA || []).join(' ')}`
             }
             initialPageSize={10}
+            searchable={false}
           />
         </section>
 
