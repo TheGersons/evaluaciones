@@ -51,6 +51,37 @@ interface ResultadoEvaluado {
 };*/
 
 const COLORS = ['#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
+const MORE_COLORS = [
+    '#4f46e5',
+    '#06b6d4',
+    '#10b981',
+    '#f59e0b',
+    '#ef4444',
+    '#6366f1', // Indigo 500
+    '#f43f5e', // Rose 500
+    '#a855f7', // Violet 500
+    '#22c55e', // Emerald 500
+    '#f97316'  // Orange 500
+];
+const GROUP_COLORS = [
+    MORE_COLORS[0], // #4f46e5 (Grupo 1)
+    MORE_COLORS[1], // #06b6d4 (Grupo 2)
+    MORE_COLORS[2], // #10b981 (Grupo 3)
+];
+
+// Los 9 títulos de las barras en el orden exacto de dataGrupos
+const BAR_TITLES = [
+    'Gestión del Desempeño',
+    'Ser Modelo',
+    'Perseverancia y Resiliencia',
+    'Apoyo',
+    'Conducta Ética',
+    'Respeto',
+    'Pensamiento Positivo',
+    'Gestión Emocional',
+    'Autoconocimiento',
+];
+
 
 export default function Resultados() {
     const [resultados, setResultados] = useState<ResultadoEvaluado[]>([]);
@@ -71,6 +102,18 @@ export default function Resultados() {
         }
     }, [cicloSeleccionado]);
 
+    const getColorForBar = (index: number) => {
+        // La división entera (Math.floor) de index / 3 nos da el índice del grupo:
+        // Índices 0, 1, 2 => 0
+        // Índices 3, 4, 5 => 1
+        // Índices 6, 7, 8 => 2
+        const groupIndex = Math.floor(index / 3);
+
+        // Usamos el operador módulo para asegurar que el índice del grupo 
+        // siempre esté dentro del rango del arreglo GROUP_COLORS (0, 1, 2)
+        return GROUP_COLORS[groupIndex % GROUP_COLORS.length];
+    };
+
     async function cargarCiclos() {
         try {
             const ciclosRes = await apiFetchCiclos();
@@ -84,9 +127,9 @@ export default function Resultados() {
                 fecha_creacion: c.fecha_creacion,
                 fecha_actualizacion: c.fecha_actualizacion
             }));
-            
+
             setCiclos(ciclosMapped);
-            
+
             // Seleccionar ciclo activo o el primero disponible
             const cicloActivo = ciclosMapped.find(c => c.estado === 'activa');
             if (cicloActivo) {
@@ -169,19 +212,19 @@ export default function Resultados() {
                 // Promedios por dimensión general (Fiabilidad, Armonía, Interés)
                 const promediosPorDimension: Record<string, number> = {};
                 const dimensiones = ['Fiabilidad', 'Armonía', 'Interés'];
-                
+
                 for (const dimension of dimensiones) {
                     const compsEnDimension = comps.filter(
                         c => c.dimension_general === dimension && c.tipo === 'likert'
                     );
-                    
+
                     if (compsEnDimension.length > 0) {
                         const promedios = compsEnDimension
                             .map(c => promediosPorCompetencia[c.id])
                             .filter(p => p !== undefined);
-                        
+
                         if (promedios.length > 0) {
-                            promediosPorDimension[dimension] = 
+                            promediosPorDimension[dimension] =
                                 promedios.reduce((a, b) => a + b, 0) / promedios.length;
                         }
                     }
@@ -414,7 +457,7 @@ export default function Resultados() {
     const dataRadarHabilidades = resultadoDetalle
         ? Object.entries(resultadoDetalle.promediosPorHabilidad)
             .sort(([, a], [, b]) => b - a)
-            .slice(0, 10)
+            .slice(0, 13)
             .map(([habilidad, valor]) => ({
                 habilidad: habilidad.substring(0, 20),
                 valor: parseFloat(valor.toFixed(2))
@@ -428,6 +471,15 @@ export default function Resultados() {
             promedio: parseFloat(promedio.toFixed(2))
         }))
         : [];
+
+    const dataGrupos = resultadoDetalle
+        ? Object.entries(resultadoDetalle.promediosPorGrupo).map(([grupo, promedio]) => ({
+            grupo,
+            promedio: parseFloat(promedio.toFixed(2))
+        }))
+        : [];
+
+
 
     return (
         <div className="root">
@@ -646,21 +698,21 @@ export default function Resultados() {
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '18px', marginBottom: '20px' }}>
                             {/* Radar de DIMENSIÓN GENERAL (3 dimensiones) */}
                             <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
-                                <h3 style={{ marginBottom: '16px' }}>Distribución por Dimensión General</h3>
+                                <h3 style={{ marginBottom: '16px', color: 'black' }}>Distribución por Dimensión General</h3>
                                 <ResponsiveContainer width="100%" height={300}>
                                     <RadarChart data={dataRadarDimensionGeneral}>
                                         <PolarGrid stroke="#d1d5db" />
-                                        <PolarAngleAxis 
-                                            dataKey="dimension" 
+                                        <PolarAngleAxis
+                                            dataKey="dimension"
                                             tick={{ fill: '#374151', fontSize: 14, fontWeight: 600 }}
                                         />
                                         <PolarRadiusAxis domain={[0, 5]} tick={{ fill: '#6b7280' }} />
-                                        <Radar 
-                                            name="Puntaje" 
-                                            dataKey="valor" 
-                                            stroke="#4f46e5" 
-                                            fill="#4f46e5" 
-                                            fillOpacity={0.4} 
+                                        <Radar
+                                            name="Puntaje"
+                                            dataKey="valor"
+                                            stroke="#4f46e5"
+                                            fill="#4f46e5"
+                                            fillOpacity={0.4}
                                             strokeWidth={2}
                                         />
                                         <Tooltip />
@@ -671,20 +723,20 @@ export default function Resultados() {
 
                             {/* Radar de HABILIDADES (Top 10 competencias) */}
                             <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
-                                <h3 style={{ marginBottom: '16px' }}>Distribución por Habilidad (Top 10)</h3>
+                                <h3 style={{ marginBottom: '16px', color: 'black' }}>Distribución por Habilidad</h3>
                                 <ResponsiveContainer width="100%" height={300}>
                                     <RadarChart data={dataRadarHabilidades}>
                                         <PolarGrid stroke="#d1d5db" />
-                                        <PolarAngleAxis 
-                                            dataKey="habilidad" 
+                                        <PolarAngleAxis
+                                            dataKey="habilidad"
                                             tick={{ fill: '#374151', fontSize: 11 }}
                                         />
                                         <PolarRadiusAxis domain={[0, 5]} tick={{ fill: '#6b7280' }} />
-                                        <Radar 
-                                            name="Puntaje" 
-                                            dataKey="valor" 
-                                            stroke="#10b981" 
-                                            fill="#10b981" 
+                                        <Radar
+                                            name="Puntaje"
+                                            dataKey="valor"
+                                            stroke="#10b981"
+                                            fill="#10b981"
                                             fillOpacity={0.4}
                                             strokeWidth={2}
                                         />
@@ -694,21 +746,56 @@ export default function Resultados() {
                                 </ResponsiveContainer>
                             </div>
 
-                            {/* Barras por cargo */}
+
+                        </div>
+                        {/* Barras por cargo */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '18px', marginBottom: '20px' }}>
                             <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
-                                <h3 style={{ marginBottom: '16px' }}>Promedio por Cargo</h3>
+                                <h3 style={{ marginBottom: '16px', color: 'black' }}>Promedio por Cargo</h3>
                                 <ResponsiveContainer width="100%" height={300}>
                                     <BarChart data={dataCargos}>
                                         <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="cargo" tick={{ fontSize: 12 }} />
+                                        <XAxis dataKey="cargo" tick={{ fontSize: 18 }} />
                                         <YAxis domain={[0, 5]} />
                                         <Tooltip />
-                                        <Bar dataKey="promedio" fill="#10b981" radius={[8, 8, 0, 0]} />
+                                        <Bar dataKey="promedio" radius={[8, 8, 0, 0]}>
+                                            {dataCargos.map((_entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                            ))}
+                                        </Bar>
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
-                        </div>
 
+                        </div>
+                        <div>
+                            <br>
+                            </br>
+                        </div>
+                        {/* Barras por Grupo */}
+                        <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
+                            <h3 style={{ marginBottom: '16px', color: 'black' }}>Promedio por Grupo</h3>
+                            <ResponsiveContainer width="100%" height={300}>
+                                <BarChart data={dataGrupos}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="grupo" tick={{ fontSize: 12 }} />
+                                    <YAxis domain={[0, 5]} />
+                                    <Tooltip />
+                                    <Bar dataKey="promedio" radius={[8, 8, 0, 0]}>
+                                        {dataGrupos.map((_entry, index) => (
+                                            <Cell
+                                                key={`cell-${index}`}
+                                                fill={getColorForBar(index)} // <-- Llama a la función
+                                            />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <div>
+                            <br>
+                            </br>
+                        </div>
                         {/* Tabla de competencias */}
                         <div style={{ background: 'white', padding: '20px', borderRadius: '14px', marginBottom: '20px' }}>
                             <h3 style={{ marginBottom: '16px', color: 'black' }}>Detalle por Competencia</h3>
@@ -736,10 +823,10 @@ export default function Resultados() {
                                                             fontWeight: '600',
                                                             background: comp.dimension_general === 'Fiabilidad' ? '#fee2e2' :
                                                                 comp.dimension_general === 'Armonía' ? '#dbeafe' :
-                                                                comp.dimension_general === 'Interés' ? '#d1fae5' : '#f3f4f6',
+                                                                    comp.dimension_general === 'Interés' ? '#d1fae5' : '#f3f4f6',
                                                             color: comp.dimension_general === 'Fiabilidad' ? '#991b1b' :
                                                                 comp.dimension_general === 'Armonía' ? '#1e40af' :
-                                                                comp.dimension_general === 'Interés' ? '#065f46' : '#374151'
+                                                                    comp.dimension_general === 'Interés' ? '#065f46' : '#374151'
                                                         }}>
                                                             {comp.dimension_general || 'N/A'}
                                                         </span>
@@ -790,26 +877,26 @@ export default function Resultados() {
                                         border: '2px solid',
                                         borderColor: dimension === 'Fiabilidad' ? '#ef4444' :
                                             dimension === 'Armonía' ? '#3b82f6' :
-                                            dimension === 'Interés' ? '#10b981' : '#d1d5db',
+                                                dimension === 'Interés' ? '#10b981' : '#d1d5db',
                                         background: dimension === 'Fiabilidad' ? '#fef2f2' :
                                             dimension === 'Armonía' ? '#eff6ff' :
-                                            dimension === 'Interés' ? '#f0fdf4' : '#f9fafb'
+                                                dimension === 'Interés' ? '#f0fdf4' : '#f9fafb'
                                     }}>
-                                        <h4 style={{ 
+                                        <h4 style={{
                                             margin: '0 0 8px 0',
                                             color: dimension === 'Fiabilidad' ? '#991b1b' :
                                                 dimension === 'Armonía' ? '#1e40af' :
-                                                dimension === 'Interés' ? '#065f46' : '#374151'
+                                                    dimension === 'Interés' ? '#065f46' : '#374151'
                                         }}>
                                             {dimension}
                                         </h4>
-                                        <p style={{ 
-                                            fontSize: '32px', 
-                                            fontWeight: '700', 
+                                        <p style={{
+                                            fontSize: '32px',
+                                            fontWeight: '700',
                                             margin: 0,
                                             color: dimension === 'Fiabilidad' ? '#dc2626' :
                                                 dimension === 'Armonía' ? '#2563eb' :
-                                                dimension === 'Interés' ? '#059669' : '#6b7280'
+                                                    dimension === 'Interés' ? '#059669' : '#6b7280'
                                         }}>
                                             {promedio.toFixed(2)}
                                         </p>
