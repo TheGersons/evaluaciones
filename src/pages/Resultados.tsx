@@ -51,7 +51,7 @@ interface ResultadoEvaluado {
 };*/
 
 const COLORS = ['#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
-const MORE_COLORS = [
+/*const MORE_COLORS = [
     '#4f46e5',
     '#06b6d4',
     '#10b981',
@@ -68,7 +68,7 @@ const GROUP_COLORS = [
     MORE_COLORS[1], // #06b6d4 (Grupo 2)
     MORE_COLORS[2], // #10b981 (Grupo 3)
 ];
-
+*/
 
 
 export default function Resultados() {
@@ -87,7 +87,7 @@ export default function Resultados() {
         cargarResultados();
     }, []);
 
-    const getColorForBar = (index: number) => {
+    /*const getColorForBar = (index: number) => {
         // La división entera (Math.floor) de index / 3 nos da el índice del grupo:
         // Índices 0, 1, 2 => 0
         // Índices 3, 4, 5 => 1
@@ -98,6 +98,7 @@ export default function Resultados() {
         // siempre esté dentro del rango del arreglo GROUP_COLORS (0, 1, 2)
         return GROUP_COLORS[groupIndex % GROUP_COLORS.length];
     };
+    */
 
     /* async function cargarCiclos() {
          try {
@@ -406,7 +407,7 @@ export default function Resultados() {
         : [];
 
     // Datos para radar de habilidades (competencias individuales) - TOP 10
-    const dataRadarHabilidades = resultadoDetalle
+    /*const dataRadarHabilidades = resultadoDetalle
         ? Object.entries(resultadoDetalle.promediosPorHabilidad)
             .sort(([, a], [, b]) => b - a)
             .slice(0, 13)
@@ -415,7 +416,7 @@ export default function Resultados() {
                 valor: parseFloat(valor.toFixed(2))
             }))
         : [];
-
+    */
     // Datos para barras por cargo
     const dataCargos = resultadoDetalle
         ? Object.entries(resultadoDetalle.promediosPorCargo).map(([cargo, promedio]) => ({
@@ -726,6 +727,12 @@ export default function Resultados() {
                                         <PolarAngleAxis
                                             dataKey="dimension"
                                             tick={{ fill: '#374151', fontSize: 14, fontWeight: 600 }}
+                                            tickFormatter={(value, index) => {
+                                                const dataPoint = dataRadarDimensionGeneral[index];
+                                                // Aseguramos que el valor esté redondeado a un decimal para ser legible
+                                                const valorRedondeado = dataPoint.valor.toFixed(2);
+                                                return `${value} (${valorRedondeado})`;
+                                            }}
                                         />
                                         <PolarRadiusAxis domain={[0, 5]} tick={{ fill: '#6b7280' }} />
                                         <Radar
@@ -746,16 +753,22 @@ export default function Resultados() {
                             <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
                                 <h3 style={{ marginBottom: '16px', color: 'black' }}>Distribución por Habilidad</h3>
                                 <ResponsiveContainer width="100%" height={300}>
-                                    <RadarChart data={dataRadarHabilidades}>
+                                    <RadarChart data={dataGrupos}>
                                         <PolarGrid stroke="#d1d5db" />
                                         <PolarAngleAxis
-                                            dataKey="habilidad"
+                                            dataKey="grupo"
                                             tick={{ fill: '#374151', fontSize: 11 }}
+                                            tickFormatter={(value, index) => {
+                                                const dataPoint = dataGrupos[index];
+                                                // Aseguramos que el valor esté redondeado a un decimal para ser legible
+                                                const valorRedondeado = dataPoint.promedio.toFixed(2);
+                                                return `${value} (${valorRedondeado})`;
+                                            }}
                                         />
                                         <PolarRadiusAxis domain={[0, 5]} tick={{ fill: '#6b7280' }} />
                                         <Radar
                                             name="Puntaje"
-                                            dataKey="valor"
+                                            dataKey="promedio"
                                             stroke="#10b981"
                                             fill="#10b981"
                                             fillOpacity={0.4}
@@ -776,7 +789,16 @@ export default function Resultados() {
                                 <ResponsiveContainer width="100%" height={300}>
                                     <BarChart data={dataCargos}>
                                         <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="cargo" tick={{ fontSize: 18 }} />
+                                        <XAxis
+                                                dataKey="cargo" 
+                                                tick={{ fontSize: 18 }} 
+                                                tickFormatter={(value, index) => {
+                                                    const dataPoint = dataCargos[index];
+                                                    // Aseguramos que el valor esté redondeado a un decimal para ser legible
+                                                    const valorRedondeado = dataPoint.promedio.toFixed(2);
+                                                    return `${value} (${valorRedondeado})`;
+                                            }}
+                                        />
                                         <YAxis domain={[0, 5]} />
                                         <Tooltip />
                                         <Bar dataKey="promedio" radius={[8, 8, 0, 0]}>
@@ -793,27 +815,9 @@ export default function Resultados() {
                             <br>
                             </br>
                         </div>
-                        {/* Barras por Grupo */}
-                        <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
-                            <h3 style={{ marginBottom: '16px', color: 'black' }}>Promedio por Grupo</h3>
-                            <ResponsiveContainer width="100%" height={300}>
-                                <BarChart data={dataGrupos}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="grupo" tick={{ fontSize: 12 }} />
-                                    <YAxis domain={[0, 5]} />
-                                    <Tooltip />
-                                    <Bar dataKey="promedio" radius={[8, 8, 0, 0]}>
-                                        {dataGrupos.map((_entry, index) => (
-                                            <Cell
-                                                key={`cell-${index}`}
-                                                fill={getColorForBar(index)} // <-- Llama a la función
-                                            />
-                                        ))}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                        <div>
+
+                        <div color='black'>
+                            nuevo grafico aca
                             <br>
                             </br>
                         </div>
