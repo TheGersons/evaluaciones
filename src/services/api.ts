@@ -9,7 +9,10 @@ import type {
   CicloEvaluacionDTO,
   CicloCompetenciaDTO,
   BulkEvaluadorInput,
-  CicloStats
+  CicloStats,
+  DimGruposMap,
+  DimRegistro,
+  GrupoRegistro,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/eval360/api';
@@ -619,4 +622,121 @@ export async function apiCreateCompetenciaEnCiclo(
   }
 
   return competencia;
+}
+
+
+// =====================================================
+// DIMENSIONES Y GRUPOS (CRUD directo a BD)
+// =====================================================
+
+export async function apiFetchDimensiones(cicloId: number): Promise<DimRegistro[]> {
+  return apiFetch<DimRegistro[]>(`/dimensions?ciclo_id=eq.${cicloId}&order=orden.asc`);
+}
+
+export async function apiFetchGrupos(cicloId: number): Promise<GrupoRegistro[]> {
+  return apiFetch<GrupoRegistro[]>(`/groups?ciclo_id=eq.${cicloId}&order=orden.asc`);
+}
+
+export async function apiFetchDimGrupos(cicloId: number): Promise<DimGruposMap> {
+  const [dimensiones, grupos] = await Promise.all([
+    apiFetchDimensiones(cicloId),
+    apiFetchGrupos(cicloId),
+  ]);
+
+  const map: DimGruposMap = {};
+
+  // Inicializa todas las dimensiones con array vacío
+  for (const d of dimensiones) {
+    map[d.nombre] = [];
+  }
+
+  // Mete cada grupo en el array de su dimensión
+  for (const g of grupos) {
+    const dim = dimensiones.find(d => d.id === g.dimension_id);
+    if (!dim) continue;
+    map[dim.nombre].push(g.nombre);
+  }
+
+  return map;
+}
+
+
+
+// Crear dimensión
+export async function apiCreateDimension(
+  cicloId: number,
+  nombre: string,
+  orden = 0
+): Promise<DimRegistro> {
+  const result = await apiFetch<DimRegistro[]>('/dimensiones', {
+    method: 'POST',
+    headers: { 'Prefer': 'return=representation' },
+    body: JSON.stringify({
+      ciclo_id: cicloId,
+      nombre,
+      orden,
+    }),
+  });
+  return Array.isArray(result) ? result[0] : result;
+}
+
+// Renombrar dimensión
+export async function apiRenameDimension(
+  dimensionId: number,
+  nombre: string
+): Promise<void> {
+  await apiFetch(`/dimensiones?id=eq.${dimensionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ nombre }),
+  });
+}
+
+// Eliminar dimensión (y opcionalmente sus grupos, según FKs)
+export async function apiDeleteDimension(dimensionId: number): Promise<void> {
+  // Si NO tienes ON DELETE CASCADE, primero borra grupos:
+  await apiFetch(`/grupos?dimension_id=eq.${dimensionId}`, {
+    method: 'DELETE',
+  });
+
+  await apiFetch(`/dimensiones?id=eq.${dimensionId}`, {
+    method: 'DELETE',
+  });
+}
+
+// Crear grupo
+export async function apiCreateGrupo(
+  cicloId: number,
+  dimensionId: number,
+  nombre: string,
+  orden = 0
+): Promise<GrupoRegistro> {
+  const result = await apiFetch<GrupoRegistro[]>('/grupos', {
+    method: 'POST',
+    headers: { 'Prefer': 'return=representation' },
+    body: JSON.stringify({
+      ciclo_id: cicloId,
+      dimension_id: dimensionId,
+      nombre,
+      orden,
+    }),
+  });
+  return Array.isArray(result) ? result[0] : result;
+}
+
+// Renombrar grupo
+export async function apiRenameGrupo(
+  grupoId: number,
+  nombre: string
+): Promise<void> {
+  await apiFetch(`/grupos?id=eq.${grupoId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ nombre }),
+  });
+}
+
+// Eliminar grupo
+export async function apiDeleteGrupo(grupoId: number): Promise<void> {
+  await apiFetch(`/grupos?id=eq.${grupoId}`, {
+    method: 'DELETE',
+  });
 }

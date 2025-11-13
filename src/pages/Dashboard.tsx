@@ -11,7 +11,9 @@ import type {
     Competencia,
     DashboardStats,
     NuevoEvaluado,
-    BulkEvaluadorInput
+    BulkEvaluadorInput,
+    DimRegistro,
+    GrupoRegistro,
 } from '../types';
 import {
     apiSetAplicaCargos,
@@ -25,10 +27,22 @@ import {
     apiFetchDashboardStats,
     apiImportEvaluadoresBatch,
     apiUpdateCompetencia,
-    apiFetchCompetenciasConCargosPorCiclo
+    apiFetchCompetenciasConCargosPorCiclo,
+    apiFetchDimGrupos,
+    apiFetchGrupos,
+    apiFetchDimensiones,
+    apiCreateDimension,
+    apiCreateGrupo,
+    apiDeleteDimension,
+    apiDeleteGrupo,
+    apiRenameDimension,
+    apiRenameGrupo
 } from '../services/api';
 import { navigate } from '../App';
 import ModalEditarCompetencia from '../components/dashboard/ModalEditarCompetencia';
+import ModalGestionDimensionesGrupos from '../components/dashboard/ModalGestionDimensionesGrupos';
+
+
 
 export default function Dashboard() {
     // Estado global
@@ -54,6 +68,14 @@ export default function Dashboard() {
     const evaluadoresPendientes = evaluadores.filter(e => e.estado !== 'Completada').length;
     const competenciasActivas = competencias.filter(c => c.activa).length;
 
+    // Dimensiones y Grupos
+
+    const [dimGrupos, setDimGrupos] = useState<Record<string, string[]>>({});
+    const [openModalDG, setOpenModalDG] = useState(false);
+
+    const [dimList, setDimList] = useState<DimRegistro[]>([]);
+    const [groupList, setGroupList] = useState<GrupoRegistro[]>([]);
+
     useEffect(() => {
         cargarTodo();
     }, []);
@@ -64,14 +86,24 @@ export default function Dashboard() {
             setError(null);
 
             // DESPUÉS:
-            const [evaluadosRes, evaluadoresRes, competenciasRes, statsRes] = await Promise.all([
+            const [
+                evaluadosRes,
+                evaluadoresRes,
+                competenciasRes,
+                statsRes,
+                dimGruposRes,
+                dimListRes,
+                groupListRes
+            ] = await Promise.all([
                 apiFetchEvaluados(Number(cicloActivoId)),
                 apiFetchEvaluadores(Number(cicloActivoId)),
                 apiFetchCompetenciasConCargosPorCiclo(Number(cicloActivoId)),
-                apiFetchDashboardStats(Number(cicloActivoId))  // ✅ Ahora pasa el cicloId
+                apiFetchDashboardStats(Number(cicloActivoId)),  // ✅ Ahora pasa el cicloId
+                apiFetchDimGrupos(Number(cicloActivoId)),
+                apiFetchDimensiones(Number(cicloActivoId)),
+                apiFetchGrupos(Number(cicloActivoId)),
             ]);
 
-            // Obtener nombre del ciclo
             const { apiGetCiclo } = await import('../services/api');
             const ciclo = await apiGetCiclo(Number(cicloActivoId));
             if (ciclo) {
@@ -118,6 +150,9 @@ export default function Dashboard() {
             );
 
             setStats(statsRes);
+            setDimGrupos(dimGruposRes);
+            setDimList(dimListRes);
+            setGroupList(groupListRes);
         } catch (e: any) {
             console.error(e);
             setError(e?.message ?? 'Error cargando datos');
@@ -230,12 +265,8 @@ export default function Dashboard() {
     // ===========================================
 
     async function handleAgregarCompetencia(data: {
-        clave: string;
-        titulo: string;
-        descripcion: string;
-        aplicaA: string[];
-        tipo: string;
-        dimensionGeneral?: string;
+        clave: string; titulo: string; descripcion: string; aplicaA: string[]; tipo: string;
+        dimensionGeneral?: string; grupo?: string;
     }) {
         const { apiCreateCompetenciaEnCiclo } = await import('../services/api');
 
@@ -247,13 +278,15 @@ export default function Dashboard() {
                 descripcion: data.descripcion,
                 orden: competencias.length,
                 tipo: data.tipo,
-                dimension_general: data.dimensionGeneral
+                dimension_general: data.dimensionGeneral,
+                grupo: data.grupo,
             },
             data.aplicaA
         );
 
-        await cargarTodo();
+        await cargarTodo(); // <- IMPORTANTE
     }
+
 
     async function handleEditarCompetencia(
         id: string,
@@ -524,7 +557,43 @@ export default function Dashboard() {
                     <FormCompetencia
                         onSubmit={handleAgregarCompetencia}
                         totalCompetencias={competencias.length}
+                        dimGrupos={dimGrupos}
+                        onOpenGestionDG={() => setOpenModalDG(true)}
                     />
+                    <ModalGestionDimensionesGrupos
+                        open={openModalDG}
+                        value={dimGrupos}
+                        dimensiones={dimList}
+                        grupos={groupList}
+                        onClose={() => setOpenModalDG(false)}
+
+                        onCreateDimension={async (nombre: string) => {
+                            await apiCreateDimension(Number(cicloActivoId), nombre);
+                            await cargarTodo();
+                        }}
+                        onRenameDimension={async (id: number, nombre: string) => {
+                            await apiRenameDimension(id, nombre);
+                            await cargarTodo();
+                        }}
+                        onDeleteDimension={async (id: number) => {
+                            await apiDeleteDimension(id);
+                            await cargarTodo();
+                        }}
+
+                        onCreateGrupo={async (dimensionId: number, nombre: string) => {
+                            await apiCreateGrupo(Number(cicloActivoId), dimensionId, nombre);
+                            await cargarTodo();
+                        }}
+                        onRenameGrupo={async (id: number, nombre: string) => {
+                            await apiRenameGrupo(id, nombre);
+                            await cargarTodo();
+                        }}
+                        onDeleteGrupo={async (id: number) => {
+                            await apiDeleteGrupo(id);
+                            await cargarTodo();
+                        }}
+                    />
+
 
                     <DataTable
                         rows={competencias}

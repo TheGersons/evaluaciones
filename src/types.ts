@@ -26,6 +26,11 @@ export interface CicloEvaluacionDTO {
   fecha_actualizacion: string;
 }
 
+export type DimRegistro = { id: number; nombre: string; orden: number };
+export type GrupoRegistro = { id: number; dimension_id: number; nombre: string; orden: number };
+
+export type DimGruposMap = Record<string, string[]>;
+
 // =====================================================
 // EVALUADOS
 // =====================================================
