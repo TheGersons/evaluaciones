@@ -46,6 +46,7 @@ export interface EvaluadoDTO {
   area: string;
   fecha_registro: string;
   activo: boolean;
+  ciclo_id: number;
 }
 
 // =====================================================

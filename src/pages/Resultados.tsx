@@ -20,10 +20,10 @@ import {
     apiFetchEvaluados,
     apiFetchEvaluaciones,
     apiFetchRespuestasPorEvaluaciones,
-    apiFetchCiclos
+    apiGetCiclo
 } from '../services/api';
-import type { EvaluadoDTO, RespuestaDTO, CicloEvaluacion } from '../types';
-import { navigate } from '../App';
+import type { EvaluadoDTO, RespuestaDTO } from '../types';
+import { getCicloRutaFromNombre, navigate } from '../App';
 import { DataTable, type DataTableColumn } from '../components/common/DataTable';
 
 interface ResultadoEvaluado {
@@ -74,21 +74,18 @@ const GROUP_COLORS = [
 export default function Resultados() {
     const [resultados, setResultados] = useState<ResultadoEvaluado[]>([]);
     const [competencias, setCompetencias] = useState<any[]>([]);
-    const [ciclos, setCiclos] = useState<CicloEvaluacion[]>([]);
-    const [cicloSeleccionado, setCicloSeleccionado] = useState<string>('');
+    const [nombreCiclo, setNombreCiclo] = useState<string>('');
+    const [cicloSeleccionado, /*setCicloSeleccionado*/] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [evaluadoSeleccionado, setEvaluadoSeleccionado] = useState<number | null>(null);
 
-    useEffect(() => {
-        cargarCiclos();
-    }, []);
+
+    const cicloActivoId = localStorage.getItem('ciclo_activo_id') || '1';
 
     useEffect(() => {
-        if (cicloSeleccionado) {
-            cargarResultados();
-        }
-    }, [cicloSeleccionado]);
+        cargarResultados();
+    }, []);
 
     const getColorForBar = (index: number) => {
         // La división entera (Math.floor) de index / 3 nos da el índice del grupo:
@@ -102,44 +99,50 @@ export default function Resultados() {
         return GROUP_COLORS[groupIndex % GROUP_COLORS.length];
     };
 
-    async function cargarCiclos() {
-        try {
-            const ciclosRes = await apiFetchCiclos();
-            const ciclosMapped = ciclosRes.map(c => ({
-                id: String(c.id),
-                nombre: c.nombre,
-                descripcion: c.descripcion,
-                fecha_inicio: c.fecha_inicio,
-                fecha_fin: c.fecha_fin,
-                estado: c.estado,
-                fecha_creacion: c.fecha_creacion,
-                fecha_actualizacion: c.fecha_actualizacion
-            }));
-
-            setCiclos(ciclosMapped);
-
-            // Seleccionar ciclo activo o el primero disponible
-            const cicloActivo = ciclosMapped.find(c => c.estado === 'activa');
-            if (cicloActivo) {
-                setCicloSeleccionado(cicloActivo.id);
-            } else if (ciclosMapped.length > 0) {
-                setCicloSeleccionado(ciclosMapped[0].id);
-            }
-        } catch (e: any) {
-            console.error(e);
-            setError('Error cargando ciclos: ' + e.message);
-        }
-    }
-
+    /* async function cargarCiclos() {
+         try {
+             const ciclosRes = await apiFetchCiclos();
+             const ciclosMapped = ciclosRes.map(c => ({
+                 id: String(c.id),
+                 nombre: c.nombre,
+                 descripcion: c.descripcion,
+                 fecha_inicio: c.fecha_inicio,
+                 fecha_fin: c.fecha_fin,
+                 estado: c.estado,
+                 fecha_creacion: c.fecha_creacion,
+                 fecha_actualizacion: c.fecha_actualizacion
+             }));
+ 
+             setCiclos(ciclosMapped);
+ 
+             // Seleccionar ciclo activo o el primero disponible
+             const cicloActivo = ciclosMapped.find(c => c.estado === 'activa');
+             if (cicloActivo) {
+                 setCicloSeleccionado(cicloActivo.id);
+             } else if (ciclosMapped.length > 0) {
+                 setCicloSeleccionado(ciclosMapped[0].id);
+             }
+         } catch (e: any) {
+             console.error(e);
+             setError('Error cargando ciclos: ' + e.message);
+         }
+     }
+     */
     async function cargarResultados() {
         try {
             setLoading(true);
             setError(null);
 
+            // Obtener nombre del ciclo
+            const ciclo = await apiGetCiclo(Number(cicloActivoId));
+            if (ciclo) {
+                setNombreCiclo(ciclo.nombre);
+            }
+
             const [evaluados, evaluaciones, comps] = await Promise.all([
                 apiFetchEvaluados(),
-                apiFetchEvaluaciones(Number(cicloSeleccionado)),
-                import('../services/api').then(api => api.apiFetchCompetenciasConCargosPorCiclo(Number(cicloSeleccionado)))
+                apiFetchEvaluaciones(Number(cicloActivoId)),
+                import('../services/api').then(api => api.apiFetchCompetenciasConCargosPorCiclo(Number(cicloActivoId)))
             ]);
 
             const todasLasRespuestas = await apiFetchRespuestasPorEvaluaciones(
@@ -197,7 +200,7 @@ export default function Resultados() {
                     }
                 });
 
-                // Promedios por dimensión general (Fiabilidad, Armonía, Interés)
+                // Promedios por dimensión general
                 const promediosPorDimension: Record<string, number> = {};
                 const dimensiones = ['Fiabilidad', 'Armonía', 'Interés'];
 
@@ -218,7 +221,7 @@ export default function Resultados() {
                     }
                 }
 
-                // Promedios por habilidad (clave única de competencia)
+                // Promedios por habilidad
                 const promediosPorHabilidad: Record<string, number> = {};
                 const habilidadesAgrupadas = new Map<string, number[]>();
 
@@ -259,8 +262,7 @@ export default function Resultados() {
                     }
                 }
 
-                //Promedios por Grupo
-
+                // Promedios por Grupo
                 const promediosPorGrupo: Record<string, number> = {};
                 const GruposAgrupados = new Map<string, number[]>();
 
@@ -338,7 +340,7 @@ export default function Resultados() {
             <div className="root">
                 <div className="app">
                     <div className="panel">
-                        <p>Cargando ciclos...</p>
+                        <p>Cargando resultados...</p>
                     </div>
                 </div>
             </div>
@@ -357,54 +359,15 @@ export default function Resultados() {
         );
     }
 
-    if (!cicloSeleccionado) {
-        return (
-            <div className="root">
-                <div className="app">
-                    <div className="panel">
-                        <h2>⚠️ No hay ciclos disponibles</h2>
-                        <p>Crea un ciclo de evaluación primero.</p>
-                        <button
-                            onClick={() => navigate('/ciclos')}
-                            style={{
-                                marginTop: '16px',
-                                padding: '10px 20px',
-                                background: '#4f46e5',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '8px',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            Ir a Gestión de Ciclos
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    if (loading) {
-        return (
-            <div className="root">
-                <div className="app">
-                    <div className="panel">
-                        <p>Cargando resultados...</p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
     if (resultados.length === 0) {
         return (
             <div className="root">
                 <div className="app">
                     <div className="panel">
-                        <h2>📊 Sin Resultados</h2>
+                        <h2>📊 Sin resultados</h2>
                         <p>No hay evaluaciones completadas para este ciclo todavía.</p>
                         <button
-                            onClick={() => navigate('/')}
+                            onClick={() => navigate(`/${getCicloRutaFromNombre(nombreCiclo)}`)}
                             style={{
                                 marginTop: '16px',
                                 padding: '10px 20px',
@@ -422,6 +385,7 @@ export default function Resultados() {
             </div>
         );
     }
+
 
     const resultadoDetalle = evaluadoSeleccionado
         ? resultados.find(r => r.evaluado.id === evaluadoSeleccionado)
@@ -563,26 +527,9 @@ export default function Resultados() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                         <div>
                             <h1>📊 Resultados Evaluación 360°</h1>
-                            <p>Análisis completo de las evaluaciones realizadas</p>
+                            <p>Análisis completo de las evaluaciones: <strong>{nombreCiclo}</strong></p>
                         </div>
                         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                            <select
-                                value={cicloSeleccionado}
-                                onChange={(e) => setCicloSeleccionado(e.target.value)}
-                                style={{
-                                    padding: '10px 16px',
-                                    border: '1px solid #d1d5db',
-                                    borderRadius: '8px',
-                                    fontSize: '14px',
-                                    fontWeight: '600'
-                                }}
-                            >
-                                {ciclos.map(c => (
-                                    <option key={c.id} value={c.id}>
-                                        {c.nombre}
-                                    </option>
-                                ))}
-                            </select>
                             <button
                                 onClick={exportarExcel}
                                 style={{
@@ -598,7 +545,7 @@ export default function Resultados() {
                                 📥 Exportar Excel
                             </button>
                             <button
-                                onClick={() => navigate('/')}
+                                onClick={() => navigate(`/${getCicloRutaFromNombre(nombreCiclo)}`)}
                                 style={{
                                     padding: '10px 20px',
                                     background: '#6b7280',
@@ -613,7 +560,6 @@ export default function Resultados() {
                         </div>
                     </div>
                 </header>
-
                 {/* Estadísticas generales */}
                 <section className="grid">
                     <div className="card">

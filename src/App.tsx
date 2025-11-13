@@ -194,6 +194,9 @@ const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const GestionCiclos = React.lazy(() => import("./pages/GestionCiclos"));
 const Resultados = React.lazy(() => import("./pages/Resultados"));
 
+export function getCicloRutaFromNombre(nombre: string): string {
+  return nombre.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+}
 function DashboardPage() {
   return (
     <React.Suspense

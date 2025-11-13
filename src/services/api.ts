@@ -179,14 +179,21 @@ export async function apiFetchStatsCiclo(cicloId: number): Promise<CicloStats | 
 // EVALUADOS
 // =====================================================
 
-export async function apiFetchEvaluados(): Promise<EvaluadoDTO[]> {
-  return apiFetch<EvaluadoDTO[]>('/evaluados?order=id.asc');
+export async function apiFetchEvaluados(ciclo_id?: number): Promise<EvaluadoDTO[]> {
+  // Si no se proporciona ciclo_id, traer todos
+  if (!ciclo_id) {
+    return apiFetch<EvaluadoDTO[]>('/evaluados?order=id.asc');
+  }
+
+  // Si se proporciona, filtrar por ese ciclo
+  return apiFetch<EvaluadoDTO[]>(`/evaluados?ciclo_id=eq.${ciclo_id}&order=id.asc`);
 }
 
 export async function apiCreateEvaluado(data: {
   nombre: string;
   puesto: string;
   area: string;
+  ciclo_id: number;
 }): Promise<EvaluadoDTO> {
   const result = await apiFetch<EvaluadoDTO[]>('/evaluados', {
     method: 'POST',
@@ -197,7 +204,8 @@ export async function apiCreateEvaluado(data: {
       nombre: data.nombre,
       puesto: data.puesto,
       area: data.area,
-      activo: true
+      activo: true,
+      ciclo_id: data.ciclo_id
     }),
   });
 
@@ -225,7 +233,7 @@ export async function apiUpdateEvaluado(
 // =====================================================
 
 export async function apiFetchEvaluadores(cicloId?: number): Promise<EvaluadorDTO[]> {
-  const query = cicloId 
+  const query = cicloId
     ? `/evaluadores?ciclo_id=eq.${cicloId}&order=id.asc`
     : '/evaluadores?order=id.asc';
   return apiFetch<EvaluadorDTO[]>(query);
@@ -519,7 +527,8 @@ export async function apiFetchCompetenciasConCargos(): Promise<Array<Competencia
 // STATS DEL DASHBOARD (Legacy - mantener compatibilidad)
 // =====================================================
 
-export async function apiFetchDashboardStats(): Promise<{
+// DESPUÉS - Agregar parámetro cicloId:
+export async function apiFetchDashboardStats(cicloId?: number): Promise<{
   totalEvaluadores: number;
   totalEvaluados: number;
   totalEvaluaciones: number;
@@ -527,9 +536,9 @@ export async function apiFetchDashboardStats(): Promise<{
   evaluadoresCompletados: number;
 }> {
   const [evaluadores, evaluados, evaluaciones] = await Promise.all([
-    apiFetchEvaluadores(),
-    apiFetchEvaluados(),
-    apiFetchEvaluaciones()
+    apiFetchEvaluadores(cicloId),    // ✅ Ahora filtra por ciclo
+    apiFetchEvaluados(cicloId),
+    apiFetchEvaluaciones(cicloId)    // ✅ Ahora filtra por ciclo
   ]);
 
   return {
@@ -547,18 +556,18 @@ export async function apiFetchCompetenciasConCargosPorCiclo(
 ): Promise<Array<CompetenciaDTO & { aplicaA: string[] }>> {
   // Obtener competencias vinculadas al ciclo
   const cicloCompetencias = await apiFetchCompetenciasDeCiclo(cicloId);
-  
+
   if (cicloCompetencias.length === 0) {
     return [];
   }
 
   const competenciaIds = cicloCompetencias.map(cc => cc.competencia_id);
-  
+
   // Obtener datos completos de competencias
   const competencias = await apiFetch<CompetenciaDTO[]>(
     `/competencias?id=in.(${competenciaIds.join(',')})&order=orden.asc`
   );
-  
+
   // Obtener cargos
   const relaciones = await apiFetch<CompetenciaAplicaCargoDTO[]>(
     `/competencias_aplica_cargo?competencia_id=in.(${competenciaIds.join(',')})`
@@ -593,7 +602,7 @@ export async function apiCreateCompetenciaEnCiclo(
 ): Promise<CompetenciaDTO> {
   // 1. Crear la competencia
   const competencia = await apiCreateCompetencia(data);
-  
+
   // 2. Vincularla al ciclo
   await apiFetch('/ciclos_competencias', {
     method: 'POST',
@@ -603,11 +612,11 @@ export async function apiCreateCompetenciaEnCiclo(
       activa: true
     }),
   });
-  
+
   // 3. Asignar cargos
   if (aplicaA.length > 0) {
     await apiSetAplicaCargos(competencia.id, aplicaA);
   }
-  
+
   return competencia;
 }
