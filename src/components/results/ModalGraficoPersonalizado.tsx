@@ -223,6 +223,7 @@ export default function ModalGraficoPersonalizado({
         // si quieres, puedes limpiar también el nombre de la agrupación:
         // setNombrePerfil("");
         setMostrarGrafico(false);
+        
 
     }
 
