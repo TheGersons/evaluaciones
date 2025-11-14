@@ -24,6 +24,7 @@ import {
 } from '../services/api';
 import type { EvaluadoDTO, RespuestaDTO } from '../types';
 import { getCicloRutaFromNombre, navigate } from '../App';
+import ModalGraficoPersonalizado from "../components/results/ModalGraficoPersonalizado";
 import { DataTable, type DataTableColumn } from '../components/common/DataTable';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -75,6 +76,8 @@ export default function Resultados() {
     const [evaluadoSeleccionado, setEvaluadoSeleccionado] = useState<number | null>(null);
     const [modoMetricas, setModoMetricas] = useState<'promedio' | 'suma'>('promedio');
     const [graficosExpandido, setGraficosExpandido] = useState(false);
+    const [openModalGraficoPersonalizado, setOpenModalGraficoPersonalizado] = useState(false);
+
     const escalaMaxLikert = useMemo(() => {
         if (!competencias || competencias.length === 0) return undefined;
 
@@ -1114,6 +1117,22 @@ export default function Resultados() {
                                                 >
                                                     {modoMetricas === 'promedio' ? 'Ver sumas' : 'Ver promedios'}
                                                 </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setOpenModalGraficoPersonalizado(true)}
+                                                    style={{
+                                                        padding: "6px 12px",
+                                                        fontSize: 13,
+                                                        fontWeight: 600,
+                                                        cursor: "pointer",
+                                                        background: "#10b981",
+                                                        color: "white",
+                                                        border: "none",
+                                                        borderRadius: 6,
+                                                    }}
+                                                >
+                                                    Gráfico personalizado
+                                                </button>
 
                                                 <button
                                                     type="button"
@@ -1423,6 +1442,18 @@ export default function Resultados() {
                     </section>
                 )}
             </div>
+            {resultadoDetalle && (
+                <ModalGraficoPersonalizado
+                    open={openModalGraficoPersonalizado}
+                    onClose={() => setOpenModalGraficoPersonalizado(false)}
+                    escalaMax={escalaMaxLikert}
+                    gruposDisponibles={Object.keys(resultadoDetalle.promediosPorGrupo)}
+                    promediosPorGrupo={resultadoDetalle.promediosPorGrupo}
+                />
+            )}
+
         </div>
+
     );
+
 }
