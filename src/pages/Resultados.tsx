@@ -1075,9 +1075,6 @@ export default function Resultados() {
                                     }}
                                 >
                                     <h2>📈 Análisis por cargo</h2>
-                                    <p className="sub">
-                                        Sumatoria de puntos por dimensión y por grupo, desglosada por cargo del evaluador.
-                                    </p>
 
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <button
