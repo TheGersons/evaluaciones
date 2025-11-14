@@ -1,5 +1,5 @@
 // src/pages/Resultados.tsx
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
     BarChart,
     Bar,
@@ -25,6 +25,8 @@ import {
 import type { EvaluadoDTO, RespuestaDTO } from '../types';
 import { getCicloRutaFromNombre, navigate } from '../App';
 import { DataTable, type DataTableColumn } from '../components/common/DataTable';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 interface ResultadoEvaluado {
     evaluado: EvaluadoDTO;
@@ -73,6 +75,19 @@ export default function Resultados() {
     const [evaluadoSeleccionado, setEvaluadoSeleccionado] = useState<number | null>(null);
     const [modoMetricas, setModoMetricas] = useState<'promedio' | 'suma'>('promedio');
     const [graficosExpandido, setGraficosExpandido] = useState(false);
+    const escalaMaxLikert = useMemo(() => {
+        if (!competencias || competencias.length === 0) return undefined;
+
+        const likert = competencias.filter((c: any) => c.tipo === 'likert');
+        if (likert.length === 0) return undefined;
+
+        const max = Math.max(
+            ...likert.map((c: any) => (c.escala_max ?? 0))
+        );
+
+        return Number.isFinite(max) && max > 0 ? max : undefined;
+    }, [competencias]);
+
 
 
     const cicloActivoId = localStorage.getItem('ciclo_activo_id') || '1';
@@ -80,6 +95,76 @@ export default function Resultados() {
     useEffect(() => {
         cargarResultados();
     }, []);
+
+    async function exportSectionAsPng(containerId: string, fileName: string) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+
+        const canvas = await html2canvas(el, {
+            backgroundColor: '#ffffff',
+            scale: 2,
+            x: 0,
+            y: 0,
+        });
+
+        const margin = 30; // px
+        const newCanvas = document.createElement('canvas');
+        newCanvas.width = canvas.width + margin * 2;
+        newCanvas.height = canvas.height + margin * 2;
+        const ctx = newCanvas.getContext('2d');
+
+        if (ctx) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, newCanvas.width, newCanvas.height);
+            ctx.drawImage(canvas, margin, margin);
+        }
+
+        const dataUrl = newCanvas.toDataURL('image/png');
+
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = fileName;
+        link.click();
+    }
+
+    async function exportSectionAsPdf(containerId: string, fileName: string) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+
+        const canvas = await html2canvas(el, {
+            scale: 2,
+            backgroundColor: '#ffffff',
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+
+        const pdf = new jsPDF('l', 'mm', 'a4'); // horizontal
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+
+        const margin = 10;
+        const maxW = pageWidth - margin * 2;
+        const maxH = pageHeight - margin * 2;
+
+        const imgWidthPx = canvas.width;
+        const imgHeightPx = canvas.height;
+        const ratio = imgHeightPx / imgWidthPx;
+
+        let renderW = maxW;
+        let renderH = renderW * ratio;
+
+        if (renderH > maxH) {
+            renderH = maxH;
+            renderW = renderH / ratio;
+        }
+
+        const x = (pageWidth - renderW) / 2;
+        const y = (pageHeight - renderH) / 2;
+
+        pdf.addImage(imgData, 'PNG', x, y, renderW, renderH, undefined, 'FAST');
+        pdf.save(fileName);
+    }
+
 
     async function cargarResultados() {
         try {
@@ -665,21 +750,73 @@ export default function Resultados() {
 
                 {/* Gráfico de ranking */}
                 <section className="panel">
-                    <h2>📈 Ranking General</h2>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={dataRanking}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="nombre" />
-                            <YAxis domain={[0, 5]} />
-                            <Tooltip />
-                            <Legend />
-                            <Bar dataKey="promedio" radius={[8, 8, 0, 0]}>
-                                {dataRanking.map((_entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Bar>
-                        </BarChart>
-                    </ResponsiveContainer>
+                    <div
+                        style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 8,
+                            marginBottom: 12,
+                        }}
+                    >
+                        <h2 style={{ margin: 0 }}>🏅 Ranking general</h2>
+
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    exportSectionAsPng('ranking-container', 'ranking-general.png')
+                                }
+                                style={{
+                                    padding: '6px 12px',
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    background: '#3b82f6',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                }}
+                            >
+                                Exportar PNG
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    exportSectionAsPdf('ranking-container', 'ranking-general.pdf')
+                                }
+                                style={{
+                                    padding: '6px 12px',
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    background: '#ef4444',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                }}
+                            >
+                                Exportar PDF
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="ranking-container">
+                        <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={dataRanking}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="nombre" />
+                                <YAxis domain={[0, 5]} />
+                                <Tooltip />
+                                <Legend />
+                                <Bar dataKey="promedio" radius={[8, 8, 0, 0]}>
+                                    {dataRanking.map((_entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
                 </section>
 
                 {/* Tabla de resultados */}
@@ -755,117 +892,172 @@ export default function Resultados() {
                 {/* Detalle expandido */}
                 {resultadoDetalle && (
                     <section className="panel" style={{ background: '#f9fafb' }}>
-                        <h2>🔍 Análisis Detallado: {resultadoDetalle.evaluado.nombre}</h2>
-
-                        <div className="grid" style={{ marginBottom: '20px' }}>
-                            <div className="card">
-                                <h3>Promedio General</h3>
-                                <p className="big-number">{resultadoDetalle.promedioGeneral.toFixed(2)}</p>
-                            </div>
-                            <div className="card">
-                                <h3>Evaluaciones Recibidas</h3>
-                                <p className="big-number">{resultadoDetalle.numEvaluaciones}</p>
-                            </div>
-                            <div className="card">
-                                <h3>Comentarios</h3>
-                                <p className="big-number">{resultadoDetalle.comentarios.length}</p>
+                        <div
+                            style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: 8,
+                                marginBottom: 12,
+                            }}
+                        >
+                            <h2>🔍 Análisis Detallado: {resultadoDetalle.evaluado.nombre}</h2>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        exportSectionAsPng(
+                                            'resumen-charts-container',
+                                            'resumen-graficos.png'
+                                        )
+                                    }
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: 13,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        background: '#3b82f6',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: 6,
+                                    }}
+                                >Exportar PNG
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        exportSectionAsPdf(
+                                            'resumen-charts-container',
+                                            'resumen-graficos.pdf'
+                                        )
+                                    }
+                                    style={{
+                                        padding: '6px 12px',
+                                        fontSize: 13,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        background: '#ef4444',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: 6,
+                                    }}
+                                >
+                                    Exportar PDF
+                                </button>
                             </div>
                         </div>
-
-                        {/* Gráficos lado a lado */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '18px', marginBottom: '20px' }}>
-                            {/* Radar de DIMENSIÓN GENERAL (3 dimensiones) */}
-                            <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
-                                <h3 style={{ marginBottom: '16px', color: 'black' }}>Distribución por Dimensión General</h3>
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <RadarChart data={dataRadarDimensionGeneral}>
-                                        <PolarGrid stroke="#d1d5db" />
-                                        <PolarAngleAxis
-                                            dataKey="dimension"
-                                            tick={{ fill: '#374151', fontSize: 14, fontWeight: 600 }}
-                                            tickFormatter={(value, index) => {
-                                                const dataPoint = dataRadarDimensionGeneral[index];
-                                                // Aseguramos que el valor esté redondeado a un decimal para ser legible
-                                                const valorRedondeado = dataPoint.valor.toFixed(2);
-                                                return `${value} (${valorRedondeado})`;
-                                            }}
-                                        />
-                                        <PolarRadiusAxis domain={[0, 5]} tick={{ fill: '#6b7280' }} />
-                                        <Radar
-                                            name="Puntaje"
-                                            dataKey="valor"
-                                            stroke="#4f46e5"
-                                            fill="#4f46e5"
-                                            fillOpacity={0.4}
-                                            strokeWidth={2}
-                                        />
-                                        <Tooltip />
-                                        <Legend />
-                                    </RadarChart>
-                                </ResponsiveContainer>
+                        <div id="resumen-charts-container">
+                            <div className="grid" style={{ marginBottom: '20px' }}>
+                                <div className="card">
+                                    <h3>Promedio General</h3>
+                                    <p className="big-number">{resultadoDetalle.promedioGeneral.toFixed(2)}</p>
+                                </div>
+                                <div className="card">
+                                    <h3>Evaluaciones Recibidas</h3>
+                                    <p className="big-number">{resultadoDetalle.numEvaluaciones}</p>
+                                </div>
+                                <div className="card">
+                                    <h3>Comentarios</h3>
+                                    <p className="big-number">{resultadoDetalle.comentarios.length}</p>
+                                </div>
                             </div>
 
-                            {/* Radar de HABILIDADES (Top 10 competencias) */}
-                            <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
-                                <h3 style={{ marginBottom: '16px', color: 'black' }}>Distribución por Habilidad</h3>
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <RadarChart data={dataGrupos}>
-                                        <PolarGrid stroke="#d1d5db" />
-                                        <PolarAngleAxis
-                                            dataKey="grupo"
-                                            tick={{ fill: '#374151', fontSize: 11 }}
-                                            tickFormatter={(value, index) => {
-                                                const dataPoint = dataGrupos[index];
-                                                // Aseguramos que el valor esté redondeado a un decimal para ser legible
-                                                const valorRedondeado = dataPoint.promedio.toFixed(2);
-                                                return `${value} (${valorRedondeado})`;
-                                            }}
-                                        />
-                                        <PolarRadiusAxis domain={[0, 5]} tick={{ fill: '#6b7280' }} />
-                                        <Radar
-                                            name="Puntaje"
-                                            dataKey="promedio"
-                                            stroke="#10b981"
-                                            fill="#10b981"
-                                            fillOpacity={0.4}
-                                            strokeWidth={2}
-                                        />
-                                        <Tooltip />
-                                        <Legend />
-                                    </RadarChart>
-                                </ResponsiveContainer>
+                            {/* Gráficos lado a lado */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '18px', marginBottom: '20px' }}>
+                                {/* Radar de DIMENSIÓN GENERAL (3 dimensiones) */}
+                                <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
+                                    <h3 style={{ marginBottom: '16px', color: 'black' }}>Distribución por Dimensión General</h3>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <RadarChart data={dataRadarDimensionGeneral}>
+                                            <PolarGrid stroke="#d1d5db" />
+                                            <PolarAngleAxis
+                                                dataKey="dimension"
+                                                tick={{ fill: '#374151', fontSize: 14, fontWeight: 600 }}
+                                                tickFormatter={(value, index) => {
+                                                    const dataPoint = dataRadarDimensionGeneral[index];
+                                                    // Aseguramos que el valor esté redondeado a un decimal para ser legible
+                                                    const valorRedondeado = dataPoint.valor.toFixed(2);
+                                                    return `${value} (${valorRedondeado})`;
+                                                }}
+                                            />
+                                            <PolarRadiusAxis domain={[0, 5]} tick={{ fill: '#6b7280' }} />
+                                            <Radar
+                                                name="Puntaje"
+                                                dataKey="valor"
+                                                stroke="#4f46e5"
+                                                fill="#4f46e5"
+                                                fillOpacity={0.4}
+                                                strokeWidth={2}
+                                            />
+                                            <Tooltip />
+                                            <Legend />
+                                        </RadarChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                                {/* Radar de HABILIDADES (Top 10 competencias) */}
+                                <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
+                                    <h3 style={{ marginBottom: '16px', color: 'black' }}>Distribución por Habilidad</h3>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <RadarChart data={dataGrupos}>
+                                            <PolarGrid stroke="#d1d5db" />
+                                            <PolarAngleAxis
+                                                dataKey="grupo"
+                                                tick={{ fill: '#374151', fontSize: 11 }}
+                                                tickFormatter={(value, index) => {
+                                                    const dataPoint = dataGrupos[index];
+                                                    // Aseguramos que el valor esté redondeado a un decimal para ser legible
+                                                    const valorRedondeado = dataPoint.promedio.toFixed(2);
+                                                    return `${value} (${valorRedondeado})`;
+                                                }}
+                                            />
+                                            <PolarRadiusAxis domain={[0, 5]} tick={{ fill: '#6b7280' }} />
+                                            <Radar
+                                                name="Puntaje"
+                                                dataKey="promedio"
+                                                stroke="#10b981"
+                                                fill="#10b981"
+                                                fillOpacity={0.4}
+                                                strokeWidth={2}
+                                            />
+                                            <Tooltip />
+                                            <Legend />
+                                        </RadarChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+
                             </div>
 
+                            {/* Barras por cargo */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '18px', marginBottom: '20px' }}>
+                                <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
+                                    <h3 style={{ marginBottom: '16px', color: 'black' }}>Promedio por Cargo</h3>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <BarChart data={dataCargos}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis
+                                                dataKey="cargo"
+                                                tick={{ fontSize: 18 }}
+                                                tickFormatter={(value, index) => {
+                                                    const dataPoint = dataCargos[index];
+                                                    // Aseguramos que el valor esté redondeado a un decimal para ser legible
+                                                    const valorRedondeado = dataPoint.promedio.toFixed(2);
+                                                    return `${value} (${valorRedondeado})`;
+                                                }}
+                                            />
+                                            <YAxis domain={[0, 5]} />
+                                            <Tooltip />
+                                            <Bar dataKey="promedio" radius={[8, 8, 0, 0]}>
+                                                {dataCargos.map((_entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
 
-                        </div>
-                        {/* Barras por cargo */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '18px', marginBottom: '20px' }}>
-                            <div style={{ background: 'white', padding: '20px', borderRadius: '14px' }}>
-                                <h3 style={{ marginBottom: '16px', color: 'black' }}>Promedio por Cargo</h3>
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <BarChart data={dataCargos}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis
-                                            dataKey="cargo"
-                                            tick={{ fontSize: 18 }}
-                                            tickFormatter={(value, index) => {
-                                                const dataPoint = dataCargos[index];
-                                                // Aseguramos que el valor esté redondeado a un decimal para ser legible
-                                                const valorRedondeado = dataPoint.promedio.toFixed(2);
-                                                return `${value} (${valorRedondeado})`;
-                                            }}
-                                        />
-                                        <YAxis domain={[0, 5]} />
-                                        <Tooltip />
-                                        <Bar dataKey="promedio" radius={[8, 8, 0, 0]}>
-                                            {dataCargos.map((_entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
                             </div>
-
                         </div>
                         {resultadoDetalle && (
                             <section className="panel">
@@ -883,6 +1075,7 @@ export default function Resultados() {
                                     <p className="sub">
                                         Sumatoria de puntos por dimensión y por grupo, desglosada por cargo del evaluador.
                                     </p>
+
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <button
                                             type="button"
@@ -902,130 +1095,182 @@ export default function Resultados() {
                                         </button>
 
                                         {graficosExpandido && (
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    setModoMetricas((m) => (m === 'promedio' ? 'suma' : 'promedio'))
-                                                }
-                                                style={{
-                                                    padding: '6px 12px',
-                                                    fontSize: 13,
-                                                    fontWeight: 600,
-                                                    cursor: 'pointer',
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setModoMetricas((m) => (m === 'promedio' ? 'suma' : 'promedio'))
+                                                    }
+                                                    style={{
+                                                        padding: '6px 12px',
+                                                        fontSize: 13,
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer',
+                                                        background: '#4f46e5',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: 6,
+                                                    }}
+                                                >
+                                                    {modoMetricas === 'promedio' ? 'Ver sumas' : 'Ver promedios'}
+                                                </button>
 
-                                                    background: '#4f46e5',
-                                                    color: 'white',
-                                                    border: 'none',
-                                                    borderRadius: '6px',
-                                                }}
-                                            >
-                                                {modoMetricas === 'promedio' ? 'Ver sumas' : 'Ver promedios'}
-                                            </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => exportSectionAsPng('charts-container', `analisis_por_cargo_${resultadoDetalle.evaluado.nombre.replace(/\s+/g, '_').toLowerCase()}.png`)}
+                                                    style={{
+                                                        padding: '6px 12px',
+                                                        fontSize: 13,
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer',
+                                                        background: '#3b82f6', // azul
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: 6,
+                                                    }}
+                                                >
+                                                    Exportar PNG
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => exportSectionAsPdf('charts-container', `analisis_por_cargo_${resultadoDetalle.evaluado.nombre.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                                                    style={{
+                                                        padding: '6px 12px',
+                                                        fontSize: 13,
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer',
+                                                        background: '#ef4444', // rojo
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: 6,
+                                                    }}
+                                                >
+                                                    Exportar PDF
+                                                </button>
+                                            </>
                                         )}
                                     </div>
+
                                 </div>
 
                                 {graficosExpandido && (
-                                    <>
-                                        {/* 1) Gráfico: Dimensiones vs Cargos */}
-                                        {dimensionesGrafico.length > 0 && cargosOrdenados.length > 0 && (
-                                            <div style={{ marginBottom: 24 }}>
-                                                <h3 style={{ marginBottom: 8 }}>Puntuación por dimensión y cargo</h3>
-                                                <div style={{ width: '100%', height: 320 }}>
-                                                    <ResponsiveContainer>
-                                                        <BarChart
-                                                            data={dataDimCargo}
-                                                            margin={{ top: 16, right: 24, left: 0, bottom: 40 }}
-                                                        >
-                                                            <CartesianGrid strokeDasharray="3 3" />
-                                                            <XAxis
-                                                                dataKey="cargo"
-                                                                angle={-20}
-                                                                textAnchor="end"
-                                                                interval={0}
-                                                                height={60}
-                                                            />
-                                                            <YAxis />
-                                                            <Tooltip />
-                                                            <Legend />
-                                                            {dimensionesGrafico.map((dim, idx) => (
-                                                                <Bar
-                                                                    key={dim}
-                                                                    dataKey={dim}
-                                                                    fill={PASTEL_COLORS[idx % PASTEL_COLORS.length]}
+                                    <div id="charts-container">
+                                        <>
+                                            {/* 1) Gráfico: Dimensiones vs Cargos */}
+                                            {dimensionesGrafico.length > 0 && cargosOrdenados.length > 0 && (
+                                                <div style={{ marginBottom: 24 }}>
+                                                    <h3 style={{ marginBottom: 8 }}>Puntuación por dimensión y cargo</h3>
+                                                    <div style={{ width: '100%', height: 320 }}>
+                                                        <ResponsiveContainer>
+                                                            <BarChart
+                                                                data={dataDimCargo}
+                                                                margin={{ top: 16, right: 24, left: 0, bottom: 40 }}
+                                                            >
+                                                                <CartesianGrid strokeDasharray="3 3" />
+                                                                <XAxis
+                                                                    dataKey="cargo"
+                                                                    angle={-20}
+                                                                    textAnchor="end"
+                                                                    interval={0}
+                                                                    height={60}
                                                                 />
-                                                            ))}
-                                                        </BarChart>
-                                                    </ResponsiveContainer>
-                                                </div>
-                                            </div>
-                                        )}
+                                                                <YAxis
+                                                                    domain={
+                                                                        modoMetricas === 'promedio' && escalaMaxLikert
+                                                                            ? [0, escalaMaxLikert]
+                                                                            : [0, 'auto']
+                                                                    }
+                                                                />
 
-                                        {/* 2) Un gráfico por dimensión con sus grupos */}
-                                        {Object.entries(resultadoDetalle.sumasPorGrupoYCargo).map(
-                                            ([dimension, gruposPorCargo]) => {
-                                                const grupos = Object.keys(gruposPorCargo);
-                                                if (grupos.length === 0) return null;
-
-                                                const dataGrupo = cargosOrdenados.map(cargo => {
-                                                    const row: any = { cargo };
-
-                                                    for (const grupo of grupos) {
-                                                        const suma = gruposPorCargo[grupo]?.[cargo] ?? 0;
-                                                        const count =
-                                                            resultadoDetalle.countsPorGrupoYCargo?.[dimension]?.[grupo]?.[cargo] ?? 0;
-
-                                                        const valor =
-                                                            modoMetricas === 'suma'
-                                                                ? suma
-                                                                : count > 0
-                                                                    ? suma / count
-                                                                    : 0;
-
-                                                        row[grupo] = Number(valor.toFixed(2));
-                                                    }
-
-                                                    return row;
-                                                });
-
-                                                return (
-                                                    <div key={dimension} style={{ marginBottom: 24 }}>
-                                                        <h3 style={{ marginBottom: 8 }}>
-                                                            {dimension} – detalle por grupos
-                                                        </h3>
-                                                        <div style={{ width: '100%', height: 320 }}>
-                                                            <ResponsiveContainer>
-                                                                <BarChart
-                                                                    data={dataGrupo}
-                                                                    margin={{ top: 16, right: 24, left: 0, bottom: 40 }}
-                                                                >
-                                                                    <CartesianGrid strokeDasharray="3 3" />
-                                                                    <XAxis
-                                                                        dataKey="cargo"
-                                                                        angle={-20}
-                                                                        textAnchor="end"
-                                                                        interval={0}
-                                                                        height={60}
+                                                                <Tooltip />
+                                                                <Legend />
+                                                                {dimensionesGrafico.map((dim, idx) => (
+                                                                    <Bar
+                                                                        key={dim}
+                                                                        dataKey={dim}
+                                                                        fill={PASTEL_COLORS[idx % PASTEL_COLORS.length]}
                                                                     />
-                                                                    <YAxis />
-                                                                    <Tooltip />
-                                                                    <Legend />
-                                                                    {grupos.map((grupo, idx) => (
-                                                                        <Bar
-                                                                            key={grupo}
-                                                                            dataKey={grupo}
-                                                                            fill={PASTEL_COLORS[idx % PASTEL_COLORS.length]}
-                                                                        />
-                                                                    ))}
-                                                                </BarChart>
-                                                            </ResponsiveContainer>
-                                                        </div>
+                                                                ))}
+                                                            </BarChart>
+                                                        </ResponsiveContainer>
                                                     </div>
-                                                );
-                                            }
-                                        )}
+                                                </div>
+                                            )}
 
-                                    </>
+                                            {/* 2) Un gráfico por dimensión con sus grupos */}
+                                            {Object.entries(resultadoDetalle.sumasPorGrupoYCargo).map(
+                                                ([dimension, gruposPorCargo]) => {
+                                                    const grupos = Object.keys(gruposPorCargo);
+                                                    if (grupos.length === 0) return null;
+
+                                                    const dataGrupo = cargosOrdenados.map(cargo => {
+                                                        const row: any = { cargo };
+
+                                                        for (const grupo of grupos) {
+                                                            const suma = gruposPorCargo[grupo]?.[cargo] ?? 0;
+                                                            const count =
+                                                                resultadoDetalle.countsPorGrupoYCargo?.[dimension]?.[grupo]?.[cargo] ?? 0;
+
+                                                            const valor =
+                                                                modoMetricas === 'suma'
+                                                                    ? suma
+                                                                    : count > 0
+                                                                        ? suma / count
+                                                                        : 0;
+
+                                                            row[grupo] = Number(valor.toFixed(2));
+                                                        }
+
+                                                        return row;
+                                                    });
+
+                                                    return (
+                                                        <div key={dimension} style={{ marginBottom: 24 }}>
+                                                            <h3 style={{ marginBottom: 8 }}>
+                                                                {dimension} – detalle por grupos
+                                                            </h3>
+                                                            <div style={{ width: '100%', height: 320 }}>
+                                                                <ResponsiveContainer>
+                                                                    <BarChart
+                                                                        data={dataGrupo}
+                                                                        margin={{ top: 16, right: 24, left: 0, bottom: 40 }}
+                                                                    >
+                                                                        <CartesianGrid strokeDasharray="3 3" />
+                                                                        <XAxis
+                                                                            dataKey="cargo"
+                                                                            angle={-20}
+                                                                            textAnchor="end"
+                                                                            interval={0}
+                                                                            height={60}
+                                                                        />
+                                                                        <YAxis
+                                                                            domain={
+                                                                                modoMetricas === 'promedio' && escalaMaxLikert
+                                                                                    ? [0, escalaMaxLikert]
+                                                                                    : [0, 'auto']
+                                                                            }
+                                                                        />
+
+                                                                        <Tooltip />
+                                                                        <Legend />
+                                                                        {grupos.map((grupo, idx) => (
+                                                                            <Bar
+                                                                                key={grupo}
+                                                                                dataKey={grupo}
+                                                                                fill={PASTEL_COLORS[idx % PASTEL_COLORS.length]}
+                                                                            />
+                                                                        ))}
+                                                                    </BarChart>
+                                                                </ResponsiveContainer>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
+                                            )}
+
+                                        </>
+                                    </div>
                                 )}
 
                             </section>
