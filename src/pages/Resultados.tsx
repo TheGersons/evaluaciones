@@ -42,33 +42,25 @@ interface ResultadoEvaluado {
         textos: string[];
         pregunta: string;
     }[];
+    // NUEVOS CAMPOS
+    sumasPorDimensionYCargo: Record<string, Record<string, number>>;
+    sumasPorGrupoYCargo: Record<string, Record<string, Record<string, number>>>;
+    countsPorDimensionYCargo: Record<string, Record<string, number>>;
+    countsPorGrupoYCargo: Record<string, Record<string, Record<string, number>>>;
 }
 
-/*const COLORES_DIMENSIONES = {
-    'Fiabilidad': '#ef4444',
-    'Armonía': '#3b82f6', 
-    'Interés': '#10b981'
-};*/
 
 const COLORS = ['#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
-/*const MORE_COLORS = [
-    '#4f46e5',
-    '#06b6d4',
-    '#10b981',
-    '#f59e0b',
-    '#ef4444',
-    '#6366f1', // Indigo 500
-    '#f43f5e', // Rose 500
-    '#a855f7', // Violet 500
-    '#22c55e', // Emerald 500
-    '#f97316'  // Orange 500
+const PASTEL_COLORS = [
+    '#ef4444', // rojo vivo
+    '#3b82f6', // azul vivo
+    '#10b981', // verde vivo
+    '#f59e0b', // amarillo/ámbar vivo
+    '#8b5cf6', // morado vivo
+    '#06b6d4', // turquesa vivo
+    '#ec4899', // rosa fuerte
+    '#f97316', // naranja vivo
 ];
-const GROUP_COLORS = [
-    MORE_COLORS[0], // #4f46e5 (Grupo 1)
-    MORE_COLORS[1], // #06b6d4 (Grupo 2)
-    MORE_COLORS[2], // #10b981 (Grupo 3)
-];
-*/
 
 
 export default function Resultados() {
@@ -79,6 +71,8 @@ export default function Resultados() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [evaluadoSeleccionado, setEvaluadoSeleccionado] = useState<number | null>(null);
+    const [modoMetricas, setModoMetricas] = useState<'promedio' | 'suma'>('promedio');
+    const [graficosExpandido, setGraficosExpandido] = useState(false);
 
 
     const cicloActivoId = localStorage.getItem('ciclo_activo_id') || '1';
@@ -87,48 +81,6 @@ export default function Resultados() {
         cargarResultados();
     }, []);
 
-    /*const getColorForBar = (index: number) => {
-        // La división entera (Math.floor) de index / 3 nos da el índice del grupo:
-        // Índices 0, 1, 2 => 0
-        // Índices 3, 4, 5 => 1
-        // Índices 6, 7, 8 => 2
-        const groupIndex = Math.floor(index / 3);
-
-        // Usamos el operador módulo para asegurar que el índice del grupo 
-        // siempre esté dentro del rango del arreglo GROUP_COLORS (0, 1, 2)
-        return GROUP_COLORS[groupIndex % GROUP_COLORS.length];
-    };
-    */
-
-    /* async function cargarCiclos() {
-         try {
-             const ciclosRes = await apiFetchCiclos();
-             const ciclosMapped = ciclosRes.map(c => ({
-                 id: String(c.id),
-                 nombre: c.nombre,
-                 descripcion: c.descripcion,
-                 fecha_inicio: c.fecha_inicio,
-                 fecha_fin: c.fecha_fin,
-                 estado: c.estado,
-                 fecha_creacion: c.fecha_creacion,
-                 fecha_actualizacion: c.fecha_actualizacion
-             }));
- 
-             setCiclos(ciclosMapped);
- 
-             // Seleccionar ciclo activo o el primero disponible
-             const cicloActivo = ciclosMapped.find(c => c.estado === 'activa');
-             if (cicloActivo) {
-                 setCicloSeleccionado(cicloActivo.id);
-             } else if (ciclosMapped.length > 0) {
-                 setCicloSeleccionado(ciclosMapped[0].id);
-             }
-         } catch (e: any) {
-             console.error(e);
-             setError('Error cargando ciclos: ' + e.message);
-         }
-     }
-     */
     async function cargarResultados() {
         try {
             setLoading(true);
@@ -201,28 +153,98 @@ export default function Resultados() {
                     }
                 });
 
-                // Promedios por dimensión general
-                const promediosPorDimension: Record<string, number> = {};
-                const dimensiones = ['Fiabilidad', 'Armonía', 'Interés'];
+                // Mapas para métricas por cargo / dimensión / grupo
 
-                for (const dimension of dimensiones) {
-                    const compsEnDimension = comps.filter(
-                        c => c.dimension_general === dimension && c.tipo === 'likert'
-                    );
+                const evalById = new Map(evals.map(e => [e.id, e]));
 
-                    if (compsEnDimension.length > 0) {
-                        const promedios = compsEnDimension
-                            .map(c => promediosPorCompetencia[c.id])
-                            .filter(p => p !== undefined);
+                const sumPorCargo: Record<string, number> = {};
+                const countPorCargo: Record<string, number> = {};
 
-                        if (promedios.length > 0) {
-                            promediosPorDimension[dimension] =
-                                promedios.reduce((a, b) => a + b, 0) / promedios.length;
-                        }
+                const sumasPorDimensionYCargo: Record<string, Record<string, number>> = {};
+                const sumasPorGrupoYCargo: Record<string, Record<string, Record<string, number>>> = {};
+                const countsPorDimensionYCargo: Record<string, Record<string, number>> = {};
+                const countsPorGrupoYCargo: Record<string, Record<string, Record<string, number>>> = {};
+                // Recorremos todas las respuestas del evaluado
+                // Recorremos todas las respuestas del evaluado
+                for (const r of respuestasDeEvaluado) {
+                    const comp = compById.get(r.competencia_id);
+                    if (!comp || comp.tipo === 'texto') continue;
+
+                    const evaluacion = evalById.get(r.evaluacion_id);
+                    const cargoBase = evaluacion?.cargo_evaluador || 'Sin cargo';
+                    const cargo = cargoBase.trim() || 'Sin cargo';
+
+                    const dimensionBase = comp.dimension_general || 'Sin dimensión';
+                    const dimension = dimensionBase.trim() || 'Sin dimensión';
+
+                    const grupoBase = comp.grupo || 'Sin grupo';
+                    const grupo = grupoBase.trim() || 'Sin grupo';
+
+                    // Promedios por cargo (guardamos sumas y conteo)
+                    if (!sumPorCargo[cargo]) {
+                        sumPorCargo[cargo] = 0;
+                        countPorCargo[cargo] = 0;
                     }
+                    sumPorCargo[cargo] += r.valor;
+                    countPorCargo[cargo] += 1;
+
+                    // Sumas + conteos por dimensión y cargo
+                    if (!sumasPorDimensionYCargo[dimension]) {
+                        sumasPorDimensionYCargo[dimension] = {};
+                        countsPorDimensionYCargo[dimension] = {};
+                    }
+                    if (!sumasPorDimensionYCargo[dimension][cargo]) {
+                        sumasPorDimensionYCargo[dimension][cargo] = 0;
+                        countsPorDimensionYCargo[dimension][cargo] = 0;
+                    }
+                    sumasPorDimensionYCargo[dimension][cargo] += r.valor;
+                    countsPorDimensionYCargo[dimension][cargo] += 1;
+
+                    // Sumas + conteos por grupo y cargo dentro de cada dimensión
+                    if (!sumasPorGrupoYCargo[dimension]) {
+                        sumasPorGrupoYCargo[dimension] = {};
+                        countsPorGrupoYCargo[dimension] = {};
+                    }
+                    if (!sumasPorGrupoYCargo[dimension][grupo]) {
+                        sumasPorGrupoYCargo[dimension][grupo] = {};
+                        countsPorGrupoYCargo[dimension][grupo] = {};
+                    }
+                    if (!sumasPorGrupoYCargo[dimension][grupo][cargo]) {
+                        sumasPorGrupoYCargo[dimension][grupo][cargo] = 0;
+                        countsPorGrupoYCargo[dimension][grupo][cargo] = 0;
+                    }
+                    sumasPorGrupoYCargo[dimension][grupo][cargo] += r.valor;
+                    countsPorGrupoYCargo[dimension][grupo][cargo] += 1;
                 }
 
-                // Promedios por habilidad
+
+                // Promedios por dimensión general (dinámico según lo que exista)
+                const promediosPorDimension: Record<string, number> = {};
+                const dimensionesSet = new Set<string>();
+                comps.forEach(comp => {
+                    if (comp.tipo === 'likert' && comp.dimension_general) {
+                        dimensionesSet.add(comp.dimension_general);
+                    }
+                });
+
+                dimensionesSet.forEach(dimension => {
+                    const compsEnDimension = comps.filter(
+                        (c: any) => c.dimension_general === dimension && c.tipo === 'likert'
+                    );
+
+                    if (compsEnDimension.length === 0) return;
+
+                    const promedios = compsEnDimension
+                        .map((c: any) => promediosPorCompetencia[c.id])
+                        .filter((p: number | undefined): p is number => p !== undefined);
+
+                    if (promedios.length > 0) {
+                        promediosPorDimension[dimension] =
+                            promedios.reduce((a: number, b: number) => a + b, 0) / promedios.length;
+                    }
+                });
+
+                // Promedios por habilidad (igual que antes)
                 const promediosPorHabilidad: Record<string, number> = {};
                 const habilidadesAgrupadas = new Map<string, number[]>();
 
@@ -247,23 +269,15 @@ export default function Resultados() {
                     ? valores.reduce((a, b) => a + b, 0) / valores.length
                     : 0;
 
-                // Promedios por cargo
+                // Promedios por cargo (a partir de sumPorCargo / countPorCargo)
                 const promediosPorCargo: Record<string, number> = {};
-                const cargosUnicos = [...new Set(evals.map(e => e.cargo_evaluador))];
+                Object.keys(sumPorCargo).forEach(cargo => {
+                    const total = sumPorCargo[cargo];
+                    const count = countPorCargo[cargo] || 1;
+                    promediosPorCargo[cargo] = total / count;
+                });
 
-                for (const cargo of cargosUnicos) {
-                    const evalsDelCargo = evals.filter(e => e.cargo_evaluador === cargo);
-                    const respuestasDelCargo = respuestasDeEvaluado.filter(r =>
-                        evalsDelCargo.some(ev => ev.id === r.evaluacion_id)
-                    );
-
-                    if (respuestasDelCargo.length > 0) {
-                        const suma = respuestasDelCargo.reduce((acc, r) => acc + r.valor, 0);
-                        promediosPorCargo[cargo] = suma / respuestasDelCargo.length;
-                    }
-                }
-
-                // Promedios por Grupo
+                // Promedios por Grupo (igual que antes)
                 const promediosPorGrupo: Record<string, number> = {};
                 const GruposAgrupados = new Map<string, number[]>();
 
@@ -271,16 +285,18 @@ export default function Resultados() {
                     if (comp.tipo === 'texto') return;
                     const promedio = promediosPorCompetencia[comp.id];
                     if (promedio !== undefined) {
-                        if (!GruposAgrupados.has(comp.grupo ?? "")) {
-                            GruposAgrupados.set(comp.grupo ?? "", []);
+                        const nombreGrupo = comp.grupo ?? "";
+                        if (!GruposAgrupados.has(nombreGrupo)) {
+                            GruposAgrupados.set(nombreGrupo, []);
                         }
-                        GruposAgrupados.get(comp.grupo ?? "")!.push(promedio);
+                        GruposAgrupados.get(nombreGrupo)!.push(promedio);
                     }
                 });
 
-                GruposAgrupados.forEach((valores, grupo) => {
-                    promediosPorGrupo[grupo] = valores.reduce((a, b) => a + b, 0) / valores.length;
+                GruposAgrupados.forEach((valoresGrupo, grupo) => {
+                    promediosPorGrupo[grupo] = valoresGrupo.reduce((a, b) => a + b, 0) / valoresGrupo.length;
                 });
+
 
                 // Comentarios
                 const comentarios = evals
@@ -297,8 +313,13 @@ export default function Resultados() {
                     promediosPorHabilidad,
                     comentarios,
                     abiertasPorCompetencia,
-                    promediosPorGrupo
+                    promediosPorGrupo,
+                    sumasPorDimensionYCargo,
+                    sumasPorGrupoYCargo,
+                    countsPorDimensionYCargo,
+                    countsPorGrupoYCargo
                 });
+
             }
 
             resultadosProcesados.sort((a, b) => b.promedioGeneral - a.promedioGeneral);
@@ -310,8 +331,8 @@ export default function Resultados() {
         } finally {
             setLoading(false);
         }
-    }
 
+    }
     const competenciasLikert = competencias.filter((c: any) => c.tipo !== 'texto');
 
     function exportarExcel() {
@@ -391,6 +412,41 @@ export default function Resultados() {
     const resultadoDetalle = evaluadoSeleccionado
         ? resultados.find(r => r.evaluado.id === evaluadoSeleccionado)
         : null;
+
+    // Helpers para nuevos gráficos por cargo
+    const cargosOrdenados = resultadoDetalle
+        ? Object.keys(resultadoDetalle.promediosPorCargo)
+        : [];
+
+    const dimensionesGrafico = resultadoDetalle
+        ? Object.keys(resultadoDetalle.sumasPorDimensionYCargo)
+        : [];
+
+    // Datos para gráfico: Dimensiones vs Cargos (sumas)
+    const dataDimCargo = resultadoDetalle
+        ? cargosOrdenados.map(cargo => {
+            const row: any = { cargo };
+
+            for (const dim of dimensionesGrafico) {
+                const suma =
+                    resultadoDetalle.sumasPorDimensionYCargo[dim]?.[cargo] ?? 0;
+                const count =
+                    resultadoDetalle.countsPorDimensionYCargo[dim]?.[cargo] ?? 0;
+
+                const valor =
+                    modoMetricas === 'suma'
+                        ? suma
+                        : count > 0
+                            ? suma / count
+                            : 0;
+
+                row[dim] = Number(valor.toFixed(2));
+            }
+
+            return row;
+        })
+        : [];
+
 
     // Datos para gráfico de ranking
     const dataRanking = resultados.map(r => ({
@@ -790,13 +846,13 @@ export default function Resultados() {
                                     <BarChart data={dataCargos}>
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis
-                                                dataKey="cargo" 
-                                                tick={{ fontSize: 18 }} 
-                                                tickFormatter={(value, index) => {
-                                                    const dataPoint = dataCargos[index];
-                                                    // Aseguramos que el valor esté redondeado a un decimal para ser legible
-                                                    const valorRedondeado = dataPoint.promedio.toFixed(2);
-                                                    return `${value} (${valorRedondeado})`;
+                                            dataKey="cargo"
+                                            tick={{ fontSize: 18 }}
+                                            tickFormatter={(value, index) => {
+                                                const dataPoint = dataCargos[index];
+                                                // Aseguramos que el valor esté redondeado a un decimal para ser legible
+                                                const valorRedondeado = dataPoint.promedio.toFixed(2);
+                                                return `${value} (${valorRedondeado})`;
                                             }}
                                         />
                                         <YAxis domain={[0, 5]} />
@@ -811,16 +867,171 @@ export default function Resultados() {
                             </div>
 
                         </div>
-                        <div>
-                            <br>
-                            </br>
-                        </div>
+                        {resultadoDetalle && (
+                            <section className="panel">
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        marginBottom: 12,
+                                        gap: 8,
+                                        flexWrap: 'wrap',
+                                    }}
+                                >
+                                    <h2>📈 Análisis por cargo</h2>
+                                    <p className="sub">
+                                        Sumatoria de puntos por dimensión y por grupo, desglosada por cargo del evaluador.
+                                    </p>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setGraficosExpandido((v) => !v)}
+                                            style={{
+                                                padding: '6px 12px',
+                                                borderRadius: 8,
+                                                border: '1px solid #d1d5db',
+                                                background: graficosExpandido ? '#e5e7eb' : '#6366f1',
+                                                color: graficosExpandido ? '#111827' : '#ffffff',
+                                                fontSize: 13,
+                                                fontWeight: 600,
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            {graficosExpandido ? 'Ocultar gráficos' : 'Expandir gráficos'}
+                                        </button>
 
-                        <div color='black'>
-                            nuevo grafico aca
-                            <br>
-                            </br>
-                        </div>
+                                        {graficosExpandido && (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setModoMetricas((m) => (m === 'promedio' ? 'suma' : 'promedio'))
+                                                }
+                                                style={{
+                                                    padding: '6px 12px',
+                                                    fontSize: 13,
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+
+                                                    background: '#4f46e5',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '6px',
+                                                }}
+                                            >
+                                                {modoMetricas === 'promedio' ? 'Ver sumas' : 'Ver promedios'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {graficosExpandido && (
+                                    <>
+                                        {/* 1) Gráfico: Dimensiones vs Cargos */}
+                                        {dimensionesGrafico.length > 0 && cargosOrdenados.length > 0 && (
+                                            <div style={{ marginBottom: 24 }}>
+                                                <h3 style={{ marginBottom: 8 }}>Puntuación por dimensión y cargo</h3>
+                                                <div style={{ width: '100%', height: 320 }}>
+                                                    <ResponsiveContainer>
+                                                        <BarChart
+                                                            data={dataDimCargo}
+                                                            margin={{ top: 16, right: 24, left: 0, bottom: 40 }}
+                                                        >
+                                                            <CartesianGrid strokeDasharray="3 3" />
+                                                            <XAxis
+                                                                dataKey="cargo"
+                                                                angle={-20}
+                                                                textAnchor="end"
+                                                                interval={0}
+                                                                height={60}
+                                                            />
+                                                            <YAxis />
+                                                            <Tooltip />
+                                                            <Legend />
+                                                            {dimensionesGrafico.map((dim, idx) => (
+                                                                <Bar
+                                                                    key={dim}
+                                                                    dataKey={dim}
+                                                                    fill={PASTEL_COLORS[idx % PASTEL_COLORS.length]}
+                                                                />
+                                                            ))}
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* 2) Un gráfico por dimensión con sus grupos */}
+                                        {Object.entries(resultadoDetalle.sumasPorGrupoYCargo).map(
+                                            ([dimension, gruposPorCargo]) => {
+                                                const grupos = Object.keys(gruposPorCargo);
+                                                if (grupos.length === 0) return null;
+
+                                                const dataGrupo = cargosOrdenados.map(cargo => {
+                                                    const row: any = { cargo };
+
+                                                    for (const grupo of grupos) {
+                                                        const suma = gruposPorCargo[grupo]?.[cargo] ?? 0;
+                                                        const count =
+                                                            resultadoDetalle.countsPorGrupoYCargo?.[dimension]?.[grupo]?.[cargo] ?? 0;
+
+                                                        const valor =
+                                                            modoMetricas === 'suma'
+                                                                ? suma
+                                                                : count > 0
+                                                                    ? suma / count
+                                                                    : 0;
+
+                                                        row[grupo] = Number(valor.toFixed(2));
+                                                    }
+
+                                                    return row;
+                                                });
+
+                                                return (
+                                                    <div key={dimension} style={{ marginBottom: 24 }}>
+                                                        <h3 style={{ marginBottom: 8 }}>
+                                                            {dimension} – detalle por grupos
+                                                        </h3>
+                                                        <div style={{ width: '100%', height: 320 }}>
+                                                            <ResponsiveContainer>
+                                                                <BarChart
+                                                                    data={dataGrupo}
+                                                                    margin={{ top: 16, right: 24, left: 0, bottom: 40 }}
+                                                                >
+                                                                    <CartesianGrid strokeDasharray="3 3" />
+                                                                    <XAxis
+                                                                        dataKey="cargo"
+                                                                        angle={-20}
+                                                                        textAnchor="end"
+                                                                        interval={0}
+                                                                        height={60}
+                                                                    />
+                                                                    <YAxis />
+                                                                    <Tooltip />
+                                                                    <Legend />
+                                                                    {grupos.map((grupo, idx) => (
+                                                                        <Bar
+                                                                            key={grupo}
+                                                                            dataKey={grupo}
+                                                                            fill={PASTEL_COLORS[idx % PASTEL_COLORS.length]}
+                                                                        />
+                                                                    ))}
+                                                                </BarChart>
+                                                            </ResponsiveContainer>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+                                        )}
+
+                                    </>
+                                )}
+
+                            </section>
+                        )}
+
+
                         {/* Tabla de competencias */}
                         <div style={{ background: 'white', padding: '20px', borderRadius: '14px', marginBottom: '20px' }}>
                             <section style={{ background: "white", padding: 20, borderRadius: 14 }}>

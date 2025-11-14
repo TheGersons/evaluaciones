@@ -767,15 +767,16 @@ export default function Dashboard() {
                         </div>
                     </div>
                 )}
-
                 {/* Modal: Editar competencia */}
                 {competenciaEditando && (
                     <ModalEditarCompetencia
                         competencia={competenciaEditando}
+                        dimGrupos={dimGrupos}         // ← NUEVO: viene del estado que cargaste desde la BD
                         onClose={() => setCompetenciaEditando(null)}
                         onSave={handleEditarCompetencia}
                     />
                 )}
+
             </div>
         </div>
     );

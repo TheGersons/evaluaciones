@@ -151,12 +151,13 @@ function AdminGate({ children }: { children: React.ReactNode }) {
               onChange={(e) => setPin(e.target.value)}
               placeholder="PIN de acceso"
               style={{
-                width: "100%",
-                padding: "8px 10px",
+                width: "87%",
+                padding: "9px 10px",
                 borderRadius: "10px",
                 border: "1px solid #d1d5db",
                 fontSize: "14px",
-                marginBottom: "8px"
+                marginBottom: "8px",
+                animation: error ? "shake 0.3s" : "none"
               }}
             />
             {error && (
